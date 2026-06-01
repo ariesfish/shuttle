@@ -1,0 +1,78 @@
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeploymentRequest
+metadata:
+  name: dsv4-quickstart
+  namespace: dynamo-system
+spec:
+  model: /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
+  backend: vllm
+  image: "cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1"
+  autoApply: true
+  hardware:
+    gpuSku: h100_sxm
+    totalGpus: 8
+  overrides:
+    dgd:
+      apiVersion: nvidia.com/v1alpha1
+      kind: DynamoGraphDeployment
+      spec:
+        services:
+          Frontend:
+            extraPodSpec:
+              mainContainer:
+                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+                env:
+                  - name: HF_HOME
+                    value: "/home/dynamo/.cache/huggingface"
+                  - name: HF_ENDPOINT
+                    value: "https://hf-mirror.com"
+          VllmDecodeWorker:
+            resources:
+              limits:
+                gpu: "8"
+              requests:
+                custom:
+                  ephemeral-storage: 2Gi
+                gpu: "8"
+            extraPodSpec:
+              mainContainer:
+                args:
+                  - --tensor-parallel-size
+                  - "8"
+                  - --pipeline-parallel-size
+                  - "1"
+                  - --data-parallel-size
+                  - "1"
+                  - --kv-cache-dtype
+                  - fp8
+                  - --max-model-len
+                  - "6500"
+                  - --max-num-seqs
+                  - "512"
+                  - --max-num-batched-tokens
+                  - "6012"
+                  - --model
+                  - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
+                  - --served-model-name
+                  - deepseek-ai/DeepSeek-V4-Flash
+                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+                env:
+                  - name: HF_HOME
+                    value: "/home/dynamo/.cache/huggingface"
+                  - name: HF_ENDPOINT
+                    value: "https://hf-mirror.com"
+    profilingJob:
+      template:
+        spec:
+          containers:
+            - name: profiler
+              image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: "https://hf-mirror.com"
+  modelCache:
+    pvcName: "dsv4-model-cache"
+    pvcMountPath: "/home/dynamo/.cache/huggingface"
+    pvcModelPath: "models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136"

@@ -1,0 +1,385 @@
+ccManager:
+  defaultMode: 'on'
+  enabled: true
+  hostNetwork: false
+  image: k8s-cc-manager
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  resources: {}
+  version: v0.4.0
+cdi:
+  enabled: true
+  nriPluginEnabled: false
+daemonsets:
+  annotations: {}
+  labels: {}
+  priorityClassName: system-node-critical
+  rollingUpdate:
+    maxUnavailable: '1'
+  tolerations:
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
+  updateStrategy: RollingUpdate
+dcgm:
+  args: []
+  enabled: false
+  env: []
+  hostNetwork: false
+  image: dcgm
+  imagePullPolicy: IfNotPresent
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  resources: {}
+  version: 4.5.2-1-ubuntu22.04
+dcgmExporter:
+  enabled: true
+  env: []
+  hostNetwork: false
+  hostPID: false
+  image: dcgm-exporter
+  imagePullPolicy: IfNotPresent
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
+  resources: {}
+  service:
+    internalTrafficPolicy: Cluster
+  serviceMonitor:
+    additionalLabels: {}
+    enabled: false
+    honorLabels: false
+    interval: 15s
+    relabelings: []
+  version: 4.5.1-4.8.0-distroless
+devicePlugin:
+  args: []
+  config:
+    create: false
+    data: {}
+    default: ''
+    name: ''
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: k8s-device-plugin
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  mps:
+    root: /run/nvidia/mps
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+  version: v0.19.0
+driver:
+  certConfig:
+    name: cert-config
+  enabled: false
+  env: []
+  hostNetwork: false
+  image: driver
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  kernelModuleConfig:
+    name: ''
+  kernelModuleType: auto
+  licensingConfig:
+    nlsEnabled: true
+    secretName: ''
+  manager:
+    env: []
+    image: k8s-driver-manager
+    imagePullPolicy: IfNotPresent
+    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    version: v0.10.0
+  nvidiaDriverCRD:
+    deployDefaultCR: true
+    driverType: gpu
+    enabled: false
+    nodeSelector: {}
+  rdma:
+    enabled: false
+    useHostMofed: false
+  repoConfig:
+    configMapName: ""
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+  secretEnv: ''
+  startupProbe:
+    failureThreshold: 120
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 60
+  upgradePolicy:
+    autoUpgrade: false
+    drain:
+      deleteEmptyDir: false
+      enable: false
+      force: false
+      podSelector: ''
+      timeoutSeconds: 300
+    gpuPodDeletion:
+      deleteEmptyDir: false
+      force: false
+      timeoutSeconds: 300
+    maxParallelUpgrades: 1
+    maxUnavailable: 25%
+    waitForCompletion:
+      podSelector: ''
+      timeoutSeconds: 0
+  usePrecompiled: false
+  version: 580.126.20
+  virtualTopology:
+    config: ''
+extraObjects: []
+gdrcopy:
+  args: []
+  enabled: false
+  env: []
+  image: gdrdrv
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  version: v2.5.2
+gds:
+  args: []
+  enabled: false
+  env: []
+  image: nvidia-fs
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  version: 2.27.3
+gfd:
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: k8s-device-plugin
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+  version: v0.19.0
+hostPaths:
+  driverInstallDir: /run/nvidia/driver
+  rootFS: /
+kataManager:
+  config: {}
+  enabled: false
+  env: []
+  hostNetwork: false
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  resources: {}
+kataSandboxDevicePlugin:
+  args: []
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: nvidia-sandbox-device-plugin
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  resources: {}
+  version: v0.0.3
+mig:
+  strategy: single
+migManager:
+  config:
+    create: false
+    data: {}
+    default: all-disabled
+    name: ''
+  enabled: true
+  env: []
+  gpuClientsConfig:
+    name: ''
+  hostNetwork: false
+  image: k8s-mig-manager
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  resources: {}
+  version: v0.14.0
+nfd:
+  enabled: true
+  nodefeaturerules: false
+node-feature-discovery:
+  gc:
+    enable: true
+    replicaCount: 1
+    serviceAccount:
+      create: false
+      name: node-feature-discovery
+  image:
+    pullPolicy: IfNotPresent
+    repository: >-
+      cr.internal.puhui.chengfengerlai.com/registry.k8s.io/nfd/node-feature-discovery
+    tag: v0.18.3
+  master:
+    config:
+      extraLabelNs:
+        - nvidia.com
+    serviceAccount:
+      create: true
+      name: node-feature-discovery
+  priorityClassName: system-node-critical
+  worker:
+    config:
+      sources:
+        pci:
+          deviceClassWhitelist:
+            - '02'
+            - '0200'
+            - '0207'
+            - '0300'
+            - '0302'
+          deviceLabelFields:
+            - vendor
+    serviceAccount:
+      create: false
+      name: node-feature-discovery
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Equal
+        value: ''
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+nodeStatusExporter:
+  enabled: false
+  hostNetwork: false
+  image: gpu-operator
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+operator:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: In
+                values:
+                  - ''
+          weight: 1
+  annotations:
+    openshift.io/scc: restricted-readonly
+  cleanupCRD: false
+  image: gpu-operator
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  logging:
+    develMode: false
+    level: info
+    timeEncoding: epoch
+  priorityClassName: system-node-critical
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources:
+    limits:
+      cpu: 500m
+      memory: 350Mi
+    requests:
+      cpu: 200m
+      memory: 100Mi
+  runtimeClass: nvidia
+  tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Equal
+      value: ''
+  upgradeCRD: true
+  use_ocp_driver_toolkit: false
+platform:
+  openshift: false
+psa:
+  enabled: false
+sandboxDevicePlugin:
+  args: []
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: kubevirt-gpu-device-plugin
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+  version: v1.5.0
+sandboxWorkloads:
+  defaultWorkload: container
+  enabled: false
+  mode: kubevirt
+toolkit:
+  enabled: true
+  env:
+    - name: CONTAINERD_SOCKET
+      value: /run/k3s/containerd/containerd.sock
+    - name: CONTAINERD_CONFIG
+      value: /var/lib/rancher/rke2/agent/etc/containerd/config.toml
+  hostNetwork: false
+  hostPaths:
+    runtimeDir: /run/k3s/containerd
+  image: container-toolkit
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  installDir: /usr/local/nvidia
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
+  resources: {}
+  version: v1.19.0
+validator:
+  args: []
+  env: []
+  hostNetwork: false
+  image: gpu-operator
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  plugin:
+    env: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  resources: {}
+vfioManager:
+  driverManager:
+    env: []
+    image: k8s-driver-manager
+    imagePullPolicy: IfNotPresent
+    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    version: v0.10.0
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: k8s-driver-manager
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  resources: {}
+  version: v0.10.0
+vgpuDeviceManager:
+  config:
+    default: default
+    name: ''
+  enabled: true
+  env: []
+  hostNetwork: false
+  image: vgpu-device-manager
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  version: v0.4.2
+vgpuManager:
+  driverManager:
+    env: []
+    image: k8s-driver-manager
+    imagePullPolicy: IfNotPresent
+    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    version: v0.10.0
+  enabled: false
+  env: []
+  hostNetwork: false
+  image: vgpu-manager
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  kernelModuleConfig:
+    name: ''
+  repository: ""
+  resources: {}
+  version: ''

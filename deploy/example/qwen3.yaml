@@ -1,0 +1,52 @@
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeploymentRequest
+metadata:
+  name: qwen3-quickstart
+  namespace: dynamo-system
+spec:
+  model: Qwen/Qwen3-0.6B
+  backend: vllm
+  image: "cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1"
+  autoApply: true
+  hardware:
+    gpuSku: h100_sxm
+    totalGpus: 2
+  overrides:  
+    dgd:
+      apiVersion: nvidia.com/v1alpha1
+      kind: DynamoGraphDeployment
+      spec:
+        services:
+          Frontend:
+            extraPodSpec:
+              mainContainer:
+                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
+                env:
+                  - name: HF_HOME
+                    value: "/home/dynamo/.cache/huggingface"
+                  - name: HF_ENDPOINT
+                    value: "https://hf-mirror.com"
+          VllmDecodeWorker:
+            extraPodSpec:
+              mainContainer:
+                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
+                env:  
+                  - name: HF_HOME
+                    value: "/home/dynamo/.cache/huggingface"
+                  - name: HF_ENDPOINT
+                    value: "https://hf-mirror.com"
+    profilingJob:
+      template:
+        spec:
+          containers:
+            - name: profiler 
+              image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: "https://hf-mirror.com"
+  modelCache:
+    pvcName: "model-cache"
+    pvcMountPath: "/home/dynamo/.cache/huggingface"
+    pvcModelPath: "models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca"

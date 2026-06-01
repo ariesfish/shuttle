@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dynamo-platform-nats-js
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /opt/zhiliu/dynamo-platform/nats-js
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: dynamo-system
+    name: dynamo-platform-nats-js-dynamo-platform-nats-0

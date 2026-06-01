@@ -1,0 +1,454 @@
+dynamo-operator:
+  checkpoint:
+    enabled: false
+  controllerManager:
+    affinity: {}
+    leaderElection:
+      id: ''
+      namespace: ''
+    manager:
+      args:
+        - '--health-probe-bind-address=:8081'
+        - '--metrics-bind-address=127.0.0.1:8080'
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      image:
+        pullPolicy: IfNotPresent
+        repository: >-
+          cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/kubernetes-operator
+        tag: ''
+      resources:
+        limits:
+          cpu: 1024m
+          memory: 2Gi
+        requests:
+          cpu: 512m
+          memory: 1Gi
+    replicas: 1
+    serviceAccount:
+      annotations: {}
+    tolerations: []
+  discoveryBackend: kubernetes
+  dynamo:
+    components:
+      serviceAccount:
+        annotations: {}
+    dockerRegistry:
+      secure: true
+      useKubernetesSecret: false
+      existingSecretName: null
+      password: null
+      server: cr.internal.puhui.chengfengerlai.com
+      username: null
+    groveTerminationDelay: 4h
+    ingress:
+      className: null
+      enabled: false
+      tlsSecretName: my-tls-secret
+    ingressHostSuffix: ''
+    istio:
+      enabled: false
+      gateway: null
+    metrics:
+      podMonitors: {}
+      prometheusEndpoint: >-
+        http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+    mpiRun:
+      secretName: mpi-run-ssh-secret
+    virtualServiceSupportsHTTPS: false
+  enabled: true
+  env: []
+  etcdAddr: ''
+  global:
+    etcd:
+      install: false
+    grove:
+      enabled: false
+      install: false
+    kai-scheduler:
+      enabled: false
+      install: false
+  gpuDiscovery:
+    enabled: true
+  imagePullSecrets: []
+  kubernetesClusterDomain: cluster.local
+  metricsService:
+    ports:
+      - name: metrics
+        port: 8080
+        protocol: TCP
+        targetPort: metrics
+    type: ClusterIP
+  modelExpressURL: ''
+  namespaceRestriction:
+    enabled: false
+    lease:
+      duration: 30s
+      renewInterval: 10s
+    targetNamespace: null
+  nats:
+    enabled: true
+  natsAddr: ''
+  upgradeCRD: true
+  webhook:
+    caBundle: ''
+    certManager:
+      certificate:
+        duration: 8760h
+        renewBefore: 360h
+        rootCA:
+          duration: 87600h
+          renewBefore: 720h
+      enabled: false
+    certificateSecret:
+      external: false
+      name: webhook-server-cert
+    failurePolicy: Fail
+    namespaceSelector: {}
+    timeoutSeconds: 10
+etcd:
+  affinity: {}
+  auth:
+    rbac:
+      create: false
+  image:
+    repository: cr.internal.puhui.chengfengerlai.com/docker.io/bitnamilegacy/etcd
+    tag: 3.5.18-debian-12-r5
+  livenessProbe:
+    enabled: false
+  pdb:
+    create: false
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: null
+  preUpgradeJob:
+    enabled: false
+  readinessProbe:
+    enabled: false
+  replicaCount: 1
+  tolerations: []
+global:
+  etcd:
+    install: false
+  grove:
+    enabled: false
+    install: false
+  kai-scheduler:
+    enabled: false
+    install: false
+grove:
+  affinity: {}
+  tolerations: []
+kai-scheduler:
+  global:
+    affinity: {}
+    tolerations: []
+nats:
+  config:
+    cluster:
+      enabled: false
+      merge: {}
+      patch: []
+      port: 6222
+      replicas: 3
+      routeURLs:
+        k8sClusterDomain: cluster.local
+        useFQDN: false
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/cluster
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+    gateway:
+      enabled: false
+      merge: {}
+      patch: []
+      port: 7222
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/gateway
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+    jetstream:
+      enabled: true
+      fileStore:
+        dir: /data
+        enabled: true
+        pvc:
+          enabled: true
+          merge: {}
+          patch: []
+          size: 10Gi
+          name: null
+          storageClassName: null
+        maxSize: null
+      memoryStore:
+        enabled: false
+        maxSize: 1Gi
+      merge: {}
+      patch: []
+    leafnodes:
+      enabled: false
+      merge: {}
+      patch: []
+      port: 7422
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/leafnodes
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+    merge:
+      max_payload: 15728640
+    monitor:
+      enabled: true
+      port: 8222
+      tls:
+        enabled: false
+    mqtt:
+      enabled: false
+      merge: {}
+      patch: []
+      port: 1883
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/mqtt
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+    nats:
+      port: 4222
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/nats
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+        secretName: null
+    patch: []
+    profiling:
+      enabled: false
+      port: 65432
+    resolver:
+      dir: /data/resolver
+      enabled: false
+      merge: {}
+      patch: []
+      pvc:
+        enabled: true
+        merge: {}
+        name: dynamo-platform-nats-resolver
+        patch: []
+        size: 1Gi
+    serverNamePrefix: ''
+    websocket:
+      enabled: false
+      ingress:
+        enabled: false
+        hosts: []
+        merge: {}
+        name: dynamo-platform-nats-ws
+        patch: []
+        path: /
+        pathType: Exact
+      merge: {}
+      patch: []
+      port: 8080
+      tls:
+        cert: tls.crt
+        dir: /etc/nats-certs/websocket
+        enabled: false
+        key: tls.key
+        merge: {}
+        patch: []
+  configMap:
+    merge: {}
+    patch: []
+    name: null
+  container:
+    env: {}
+    image:
+      digest: null
+      fullImageName: null
+      repository: cr.internal.puhui.chengfengerlai.com/docker.io/nats
+      tag: 2.10.21-alpine
+      pullPolicy: null
+      registry: null
+    merge: {}
+    patch: []
+    ports:
+      cluster: {}
+      gateway: {}
+      leafnodes: {}
+      monitor: {}
+      mqtt: {}
+      nats: {}
+      profiling: {}
+      websocket: {}
+  enabled: true
+  extraResources: []
+  fullnameOverride: null
+  global:
+    etcd:
+      install: false
+    grove:
+      enabled: false
+      install: false
+    image:
+      pullSecretNames: []
+    kai-scheduler:
+      enabled: false
+      install: false
+    labels: {}
+  headlessService:
+    merge: {}
+    patch: []
+    name: null
+  nameOverride: null
+  namespaceOverride: null
+  natsBox:
+    container:
+      env: {}
+      image:
+        digest: null
+        fullImageName: null
+        repository: cr.internal.puhui.chengfengerlai.com/docker.io/natsio/nats-box
+        tag: 0.14.5
+        pullPolicy: null
+        registry: null
+      merge: {}
+      patch: []
+    contentsSecret:
+      merge: {}
+      name: dynamo-platform-nats-box-contents
+      patch: []
+    contexts:
+      default:
+        creds:
+          key: nats.creds
+          contents: null
+          dir: null
+          secretName: null
+        merge: {}
+        nkey:
+          key: nats.nk
+          contents: null
+          dir: null
+          secretName: null
+        patch: []
+        tls:
+          cert: tls.crt
+          key: tls.key
+          dir: null
+          secretName: null
+    contextsSecret:
+      merge: {}
+      name: dynamo-platform-nats-box-contexts
+      patch: []
+    defaultContextName: default
+    deployment:
+      merge: {}
+      name: dynamo-platform-nats-box
+      patch: []
+    enabled: false
+    podTemplate:
+      merge:
+        spec:
+          affinity: {}
+          tolerations: []
+      patch: []
+    serviceAccount:
+      enabled: false
+      merge: {}
+      name: null
+      patch: []
+  podDisruptionBudget:
+    enabled: true
+    merge: {}
+    name: null
+    patch: []
+  podTemplate:
+    configChecksumAnnotation: true
+    merge:
+      spec:
+        affinity: {}
+        tolerations: []
+    patch: []
+    topologySpreadConstraints: {}
+  promExporter:
+    enabled: false
+    env: {}
+    image:
+      repository: natsio/prometheus-nats-exporter
+      tag: 0.16.0
+    merge: {}
+    patch: []
+    podMonitor:
+      enabled: false
+      merge: {}
+      name: dynamo-platform-nats
+      patch: []
+    port: 7777
+  reloader:
+    enabled: true
+    env: {}
+    image:
+      digest: null
+      fullImageName: null
+      repository: >-
+        cr.internal.puhui.chengfengerlai.com/docker.io/natsio/nats-server-config-reloader
+      tag: 0.16.0
+      pullPolicy: null
+      registry: null
+    merge: {}
+    natsVolumeMountPrefixes:
+      - /etc/
+    patch: []
+  service:
+    enabled: true
+    merge: {}
+    patch: []
+    ports:
+      cluster:
+        enabled: false
+      gateway:
+        enabled: false
+      leafnodes:
+        enabled: true
+      monitor:
+        enabled: false
+      mqtt:
+        enabled: true
+      nats:
+        enabled: true
+      profiling:
+        enabled: false
+      websocket:
+        enabled: true
+    name: null
+  serviceAccount:
+    enabled: false
+    merge: {}
+    name: null
+    patch: []
+  statefulSet:
+    merge: {}
+    patch: []
+    name: null
+  tlsCA:
+    configMapName: null
+    dir: /etc/nats-ca-cert
+    enabled: false
+    key: ca.crt
+    secretName: null
