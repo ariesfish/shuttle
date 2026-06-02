@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Helm packaged chart archives
+*.tgz
+charts/packages/
+
+# Local editor and temp files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
