@@ -71,7 +71,7 @@ spec:
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
-          kubernetes.io/hostname: iarom3h4k-1-3-1
+          kubernetes.io/hostname: icv63h7b6-1
         volumes:
           - name: model-cache
             hostPath:
@@ -151,20 +151,20 @@ spec:
               value: "1"
             - name: VLLM_SKIP_P2P_CHECK
               value: "1"
+            - name: NVIDIA_GDRCPY
+              value: "enabled"
             - name: NCCL_CUMEM_ENABLE
-              value: "1"
-            - name: PYTORCH_CUDA_ALLOC_CONF
-              value: expandable_segments:True
+              value: "0"
             - name: NCCL_SOCKET_IFNAME
-              value: bond0.500
+              value: bond0.800
             - name: NCCL_IB_DISABLE
               value: "0"
             - name: NCCL_IB_HCA
-              value: mlx5_0:1,mlx5_3:1
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
             - name: UCX_NET_DEVICES
-              value: mlx5_0:1,mlx5_3:1
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
             - name: UCX_IB_ADDR_TYPE
-              value: "ib_local"
+              value: "ib_global"
           volumeMounts:
             - mountPath: /home/dynamo/.cache/huggingface
               name: model-cache
@@ -273,18 +273,20 @@ spec:
               value: "1"
             - name: VLLM_SKIP_P2P_CHECK
               value: "1"
+            - name: NVIDIA_GDRCPY
+              value: "enabled"
             - name: NCCL_CUMEM_ENABLE
-              value: "1"
+              value: "0"
             - name: NCCL_SOCKET_IFNAME
               value: bond0.800
             - name: NCCL_IB_DISABLE
               value: "0"
             - name: NCCL_IB_HCA
-              value: mlx5_0:1,mlx5_3:1
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
             - name: UCX_NET_DEVICES
-              value: mlx5_0:1,mlx5_3:1
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
             - name: UCX_IB_ADDR_TYPE
-              value: "ib_local"
+              value: "ib_global"
           volumeMounts:
             - mountPath: /home/dynamo/.cache/huggingface
               name: model-cache
