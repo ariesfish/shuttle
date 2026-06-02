@@ -3,5 +3,5 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-"${SCRIPT_DIR}/package.sh"
-"${SCRIPT_DIR}/push.sh" "$@"
+"${SCRIPT_DIR}/package-charts.sh"
+"${SCRIPT_DIR}/push-charts.sh" "$@"

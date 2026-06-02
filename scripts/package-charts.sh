@@ -2,7 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_DIR="${PACKAGE_DIR:-${SCRIPT_DIR}/packages}"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CHARTS_DIR="${CHARTS_DIR:-${REPO_ROOT}/charts}"
+PACKAGE_DIR="${PACKAGE_DIR:-${CHARTS_DIR}/packages}"
 SKIP_LINT="${SKIP_LINT:-false}"
 
 find_charts() {
@@ -11,13 +13,13 @@ find_charts() {
       if [[ "${chart}" = /* ]]; then
         printf '%s\n' "${chart}"
       else
-        printf '%s\n' "${SCRIPT_DIR}/${chart}"
+        printf '%s\n' "${CHARTS_DIR}/${chart}"
       fi
     done
     return
   fi
 
-  find "${SCRIPT_DIR}" \
+  find "${CHARTS_DIR}" \
     -mindepth 2 \
     -maxdepth 2 \
     -name Chart.yaml \
@@ -32,7 +34,7 @@ main() {
 
   mapfile -t charts < <(find_charts)
   if [[ "${#charts[@]}" -eq 0 ]]; then
-    echo "No charts found under ${SCRIPT_DIR}" >&2
+    echo "No charts found under ${CHARTS_DIR}" >&2
     exit 1
   fi
 

@@ -2,21 +2,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_DIR="${PACKAGE_DIR:-${SCRIPT_DIR}/packages}"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CHARTS_DIR="${CHARTS_DIR:-${REPO_ROOT}/charts}"
+PACKAGE_DIR="${PACKAGE_DIR:-${CHARTS_DIR}/packages}"
 REMOTE_REPO="${REMOTE_REPO:-}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  REMOTE_REPO=<repo> ./push.sh
-  ./push.sh <repo>
+  REMOTE_REPO=<repo> ./scripts/push-charts.sh
+  ./scripts/push-charts.sh <repo>
 
 Examples:
-  ./push.sh oci://registry.example.com/helm
-  REMOTE_REPO=oci://ghcr.io/acme/charts ./push.sh
+  ./scripts/push-charts.sh oci://registry.example.com/helm
+  REMOTE_REPO=oci://ghcr.io/acme/charts ./scripts/push-charts.sh
 
 Optional env:
-  PACKAGE_DIR=./packages      Directory containing packaged *.tgz charts.
+  CHARTS_DIR=./charts         Directory containing chart directories.
+  PACKAGE_DIR=./charts/packages
+                             Directory containing packaged *.tgz charts.
   PACKAGES="a.tgz b.tgz"      Push only selected package files.
 EOF
 }
@@ -48,14 +52,14 @@ main() {
 
   if [[ ! -d "${PACKAGE_DIR}" ]]; then
     echo "Package directory does not exist: ${PACKAGE_DIR}" >&2
-    echo "Run ${SCRIPT_DIR}/package.sh first." >&2
+    echo "Run ${SCRIPT_DIR}/package-charts.sh first." >&2
     exit 1
   fi
 
   mapfile -t packages < <(find_packages)
   if [[ "${#packages[@]}" -eq 0 ]]; then
     echo "No chart packages found in ${PACKAGE_DIR}" >&2
-    echo "Run ${SCRIPT_DIR}/package.sh first." >&2
+    echo "Run ${SCRIPT_DIR}/package-charts.sh first." >&2
     exit 1
   fi
 
