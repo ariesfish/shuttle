@@ -576,6 +576,11 @@ nats:
   promExporter:
     # Whether to enable Prometheus metrics exporter sidecar
     enabled: true
+    image:
+      # Prometheus NATS exporter image mirrored to the internal registry.
+      # Keep this pinned here to avoid Docker Hub pull timeouts during upgrades.
+      repository: cr.yichang.puhui.chengfengerlai.com/docker.io/natsio/prometheus-nats-exporter
+      tag: 0.16.0
 
   ############################################################
   # Kubernetes Service for NATS access
