@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
-TARGET_REG="cr.yichang.puhui.chengfengerlai.com"
+TARGET_REG="${TARGET_REG:-cr.yichang.puhui.chengfengerlai.com}"
 
 images=(
   # gpu-operator current enabled/default operands
@@ -10,8 +10,10 @@ images=(
   "nvcr.io/nvidia/k8s/container-toolkit:v1.19.1"
   "nvcr.io/nvidia/k8s-device-plugin:v0.19.2"
   "nvcr.io/nvidia/k8s/dcgm-exporter:4.5.3-4.8.2-distroless"
-  "nvcr.io/nvidia/cloud-native/nvidia-fs:2.27.3"
-  "nvcr.io/nvidia/cloud-native/gdrdrv:v2.5.2"
+  "nvcr.io/nvidia/cloud-native/nvidia-fs:2.27.3-ubuntu22.04"
+  "nvcr.io/nvidia/cloud-native/nvidia-fs:2.27.3-ubuntu24.04"
+  "nvcr.io/nvidia/cloud-native/gdrdrv:v2.5.2-ubuntu22.04"
+  "nvcr.io/nvidia/cloud-native/gdrdrv:v2.5.2-ubuntu24.04"
 
   # kube-prometheus-stack rendered/default images
   "ghcr.io/jkroepke/kube-webhook-certgen:1.8.3"
@@ -29,20 +31,48 @@ images=(
   "nvcr.io/nvidia/cloud-native/network-operator:v26.1.1"
   "nvcr.io/nvidia/mellanox/network-operator-init-container:network-operator-v26.1.1"
 
-  # dynamo-system rendered/default images
-  "nvcr.io/nvidia/ai-dynamo/kubernetes-operator:1.1.1"
+  # dynamo-system rendered/default images and runtime images
+  "nvcr.io/nvidia/ai-dynamo/kubernetes-operator:1.2.0"
+  "nvcr.io/nvidia/ai-dynamo/dynamo-frontend:1.2.0"
+  "nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.2.0"
+  "nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-efa"
+  "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa"
   "docker.io/nats:2.10.21-alpine"
   "docker.io/natsio/nats-server-config-reloader:0.16.0"
   "docker.io/natsio/prometheus-nats-exporter:0.16.0"
 )
 
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker CLI not found. Install Docker Desktop or add its CLI path to PATH." >&2
+  exit 1
+fi
+
+remote_exists() {
+  local image="$1"
+  docker buildx imagetools inspect "$image" >/dev/null 2>&1
+}
+
+has_linux_amd64() {
+  local image="$1"
+  docker buildx imagetools inspect "$image" 2>&1 | grep -Eq 'Platform:[[:space:]]+linux/amd64'
+}
+
 ok=()
+skip=()
 fail=()
 for src in "${images[@]}"; do
   dst="$TARGET_REG/$src"
   echo "=== $src -> $dst (linux/amd64)"
+
+  if remote_exists "$dst"; then
+    skip+=("$dst")
+    echo "SKIP existing tag $dst"
+    echo
+    continue
+  fi
+
   if docker buildx imagetools create --platform linux/amd64 -t "$dst" "$src"; then
-    if docker buildx imagetools inspect "$dst" | grep -q 'Platform:.*linux/amd64'; then
+    if has_linux_amd64 "$dst"; then
       ok+=("$dst")
       echo "OK $dst"
     else
@@ -58,6 +88,8 @@ done
 
 echo "===== SUMMARY OK ${#ok[@]} ====="
 printf '%s\n' "${ok[@]}"
+echo "===== SUMMARY SKIP ${#skip[@]} ====="
+printf '%s\n' "${skip[@]}"
 echo "===== SUMMARY FAIL ${#fail[@]} ====="
 printf '%s\n' "${fail[@]}"
 [[ ${#fail[@]} -eq 0 ]]
