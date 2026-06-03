@@ -34,6 +34,7 @@ Rules:
 
 - ALWAYS package charts through `scripts/package-charts.sh` or `scripts/package-and-push-charts.sh`.
 - ALWAYS push charts through `scripts/push-charts.sh` or `scripts/package-and-push-charts.sh`.
+- BEFORE adding or modifying deployment YAML under `deployment/`, read the relevant documentation under `docs/` first.
 - NEVER commit files under `charts/packages/` or other generated `*.tgz` chart archives.
 
 ## Validation
