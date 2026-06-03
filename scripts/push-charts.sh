@@ -5,15 +5,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CHARTS_DIR="${CHARTS_DIR:-${REPO_ROOT}/charts}"
 PACKAGE_DIR="${PACKAGE_DIR:-${CHARTS_DIR}/packages}"
-REMOTE_REPO="${REMOTE_REPO:-}"
+REMOTE_REPO="${REMOTE_REPO:-oci://cr.yichang.puhui.chengfengerlai.com/helm-charts}"
 
 usage() {
   cat <<'EOF'
 Usage:
+  ./scripts/push-charts.sh
   REMOTE_REPO=<repo> ./scripts/push-charts.sh
   ./scripts/push-charts.sh <repo>
 
+Default remote:
+  oci://cr.yichang.puhui.chengfengerlai.com/helm-charts
+
 Examples:
+  ./scripts/push-charts.sh
   ./scripts/push-charts.sh oci://registry.example.com/helm
   REMOTE_REPO=oci://ghcr.io/acme/charts ./scripts/push-charts.sh
 
@@ -56,7 +61,10 @@ main() {
     exit 1
   fi
 
-  mapfile -t packages < <(find_packages)
+  packages=()
+  while IFS= read -r package; do
+    packages+=("${package}")
+  done < <(find_packages)
   if [[ "${#packages[@]}" -eq 0 ]]; then
     echo "No chart packages found in ${PACKAGE_DIR}" >&2
     echo "Run ${SCRIPT_DIR}/package-charts.sh first." >&2

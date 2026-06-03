@@ -32,7 +32,10 @@ find_charts() {
 main() {
   mkdir -p "${PACKAGE_DIR}"
 
-  mapfile -t charts < <(find_charts)
+  charts=()
+  while IFS= read -r chart; do
+    charts+=("${chart}")
+  done < <(find_charts)
   if [[ "${#charts[@]}" -eq 0 ]]; then
     echo "No charts found under ${CHARTS_DIR}" >&2
     exit 1
