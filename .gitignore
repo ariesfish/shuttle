@@ -8,6 +8,7 @@ charts/packages/
 # Local editor and temp files
 .vscode/
 .idea/
+temp/
 *.swp
 *.swo
 *~
