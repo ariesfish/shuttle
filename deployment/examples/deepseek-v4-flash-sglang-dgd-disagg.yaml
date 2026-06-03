@@ -1,0 +1,252 @@
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: dsv4-sglang-disagg
+  namespace: dynamo-system
+spec:
+  services:
+    Frontend:
+      componentType: frontend
+      envFromSecret: hf-token-secret
+      replicas: 1
+      extraPodSpec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        volumes:
+          - name: model-cache
+            hostPath:
+              path: /data/cache/hub
+              type: Directory
+        mainContainer:
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          command:
+            - python3
+            - -m
+            - dynamo.frontend
+          args:
+            - --model-name
+            - deepseek-ai/DeepSeek-V4-Flash
+            - --model-path
+            - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
+          env:
+            - name: HF_HOME
+              value: /home/dynamo/.cache/huggingface
+            - name: HF_ENDPOINT
+              value: https://hf-mirror.com
+            - name: HF_HUB_OFFLINE
+              value: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/dynamo/.cache/huggingface
+
+    decode:
+      componentType: worker
+      subComponentType: decode
+      envFromSecret: hf-token-secret
+      replicas: 1
+      resources:
+        limits:
+          gpu: "8"
+          custom:
+            rdma/rdma_shared_device_a: "8"
+        requests:
+          gpu: "8"
+          custom:
+            ephemeral-storage: 2Gi
+            rdma/rdma_shared_device_a: "8"
+      sharedMemory:
+        size: 200Gi
+      extraPodSpec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector:
+          kubernetes.io/hostname: icv63h7b6-1
+        volumes:
+          - name: model-cache
+            hostPath:
+              path: /data/cache/hub
+              type: Directory
+          - name: sglang-cache
+            hostPath:
+              path: /data/dynamo-cache/sglang
+              type: DirectoryOrCreate
+        mainContainer:
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          workingDir: /workspace/examples/backends/sglang
+          command:
+            - python3
+            - -m
+            - dynamo.sglang
+          args:
+            - --model-path
+            - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
+            - --served-model-name
+            - deepseek-ai/DeepSeek-V4-Flash
+            - --tp
+            - "8"
+            - --trust-remote-code
+            - --page-size
+            - "16"
+            - --host
+            - 0.0.0.0
+            - --disaggregation-mode
+            - decode
+            - --disaggregation-transfer-backend
+            - nixl
+            - --disaggregation-bootstrap-port
+            - "12345"
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              add:
+                - IPC_LOCK
+                - SYS_RESOURCE
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 360
+          env:
+            - name: HF_HOME
+              value: /home/dynamo/.cache/huggingface
+            - name: HF_ENDPOINT
+              value: https://hf-mirror.com
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: NCCL_CUMEM_ENABLE
+              value: "0"
+            - name: NCCL_SOCKET_IFNAME
+              value: bond0.800
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_IB_HCA
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+            - name: UCX_TLS
+              value: rc_x,rc,cuda_copy,cuda_ipc
+            - name: UCX_NET_DEVICES
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+            - name: UCX_IB_ADDR_TYPE
+              value: ib_global
+            - name: UCX_RNDV_SCHEME
+              value: get_zcopy
+            - name: UCX_RNDV_THRESH
+              value: "0"
+            - name: UCX_RC_TIMEOUT
+              value: 600s
+            - name: UCX_KEEPALIVE_INTERVAL
+              value: 300s
+            - name: NIXL_LOG_LEVEL
+              value: INFO
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/dynamo/.cache/huggingface
+            - name: sglang-cache
+              mountPath: /data/dynamo-cache/sglang
+
+    prefill:
+      componentType: worker
+      subComponentType: prefill
+      envFromSecret: hf-token-secret
+      replicas: 1
+      resources:
+        limits:
+          gpu: "8"
+          custom:
+            rdma/rdma_shared_device_a: "8"
+        requests:
+          gpu: "8"
+          custom:
+            ephemeral-storage: 2Gi
+            rdma/rdma_shared_device_a: "8"
+      sharedMemory:
+        size: 200Gi
+      extraPodSpec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector:
+          kubernetes.io/hostname: icv63h7b6
+        volumes:
+          - name: model-cache
+            hostPath:
+              path: /data/cache/hub
+              type: Directory
+          - name: sglang-cache
+            hostPath:
+              path: /data/dynamo-cache/sglang
+              type: DirectoryOrCreate
+        mainContainer:
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          workingDir: /workspace/examples/backends/sglang
+          command:
+            - python3
+            - -m
+            - dynamo.sglang
+          args:
+            - --model-path
+            - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
+            - --served-model-name
+            - deepseek-ai/DeepSeek-V4-Flash
+            - --tp
+            - "8"
+            - --trust-remote-code
+            - --page-size
+            - "16"
+            - --host
+            - 0.0.0.0
+            - --disaggregation-mode
+            - prefill
+            - --disaggregation-transfer-backend
+            - nixl
+            - --disaggregation-bootstrap-port
+            - "12345"
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              add:
+                - IPC_LOCK
+                - SYS_RESOURCE
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 360
+          env:
+            - name: HF_HOME
+              value: /home/dynamo/.cache/huggingface
+            - name: HF_ENDPOINT
+              value: https://hf-mirror.com
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: NCCL_CUMEM_ENABLE
+              value: "0"
+            - name: NCCL_SOCKET_IFNAME
+              value: bond0.800
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: NCCL_IB_HCA
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+            - name: UCX_TLS
+              value: rc_x,rc,cuda_copy,cuda_ipc
+            - name: UCX_NET_DEVICES
+              value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+            - name: UCX_IB_ADDR_TYPE
+              value: ib_global
+            - name: UCX_RNDV_SCHEME
+              value: get_zcopy
+            - name: UCX_RNDV_THRESH
+              value: "0"
+            - name: UCX_RC_TIMEOUT
+              value: 600s
+            - name: UCX_KEEPALIVE_INTERVAL
+              value: 300s
+            - name: NIXL_LOG_LEVEL
+              value: INFO
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/dynamo/.cache/huggingface
+            - name: sglang-cache
+              mountPath: /data/dynamo-cache/sglang

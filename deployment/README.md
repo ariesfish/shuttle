@@ -82,5 +82,5 @@ kubectl get pvc -n dynamo-system model-cache
 After the platform is installed, apply example workloads manually as needed:
 
 ```bash
-kubectl apply -f deployment/examples/qwen3.yaml
+kubectl apply -f deployment/examples/qwen3-0-6b-vllm-dgdr-quickstart.yaml
 ```
