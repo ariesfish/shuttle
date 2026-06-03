@@ -6,7 +6,7 @@ metadata:
 spec:
   model: Qwen/Qwen3-0.6B
   backend: vllm
-  image: "cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1"
+  image: "cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1"
   autoApply: true
   hardware:
     gpuSku: h100_sxm
@@ -20,7 +20,7 @@ spec:
           Frontend:
             extraPodSpec:
               mainContainer:
-                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
+                image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
                 env:
                   - name: HF_HOME
                     value: "/home/dynamo/.cache/huggingface"
@@ -29,7 +29,7 @@ spec:
           VllmDecodeWorker:
             extraPodSpec:
               mainContainer:
-                image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
+                image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.1.1
                 env:  
                   - name: HF_HOME
                     value: "/home/dynamo/.cache/huggingface"
@@ -40,7 +40,7 @@ spec:
         spec:
           containers:
             - name: profiler 
-              image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1
+              image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/dynamo-planner:1.1.1
               env:
                 - name: HF_HOME
                   value: "/home/dynamo/.cache/huggingface"

@@ -24,7 +24,7 @@ spec:
             - deepseek-ai/DeepSeek-V4-Flash
             - --model-path
             - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
-          image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
           env:
             - name: HF_HOME
               value: /home/dynamo/.cache/huggingface
@@ -69,7 +69,7 @@ spec:
             - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
             - --served-model-name
             - deepseek-ai/DeepSeek-V4-Flash
-          image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
           workingDir: /workspace/examples/backends/vllm
           env:
             - name: HF_HOME

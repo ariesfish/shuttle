@@ -38,7 +38,7 @@ spec:
             - deepseek-ai/DeepSeek-V4-Flash
             - --model-path
             - /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136
-          image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
           workingDir: /workspace/examples/backends/vllm
           env:
             - name: HF_HOME
@@ -117,7 +117,7 @@ spec:
                 --max-num-batched-tokens 4096 \
                 --gpu-memory-utilization 0.85 \
                 --disable-custom-all-reduce
-          image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
           workingDir: /workspace/examples/backends/vllm
           securityContext:
             runAsUser: 0
@@ -239,7 +239,7 @@ spec:
                 --max-model-len 6500 \
                 --max-num-seqs 256 \
                 --max-num-batched-tokens 6012
-          image: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
           workingDir: /workspace/examples/backends/vllm
           securityContext:
             runAsUser: 0
