@@ -44,7 +44,7 @@ node-feature-discovery:
   postDeleteCleanup: false
 
   image:
-    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/node-feature-discovery
+    repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/node-feature-discovery
     tag: network-operator-v26.1.1
     pullPolicy: IfNotPresent
   # imagePullSecrest for node-feature-discovery Network Operator related images
@@ -157,15 +157,15 @@ sriov-network-operator:
 
   # Image URIs for sriov-network-operator components.
   images:
-    operator: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator:network-operator-v26.1.1
-    sriovConfigDaemon: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator-config-daemon:network-operator-v26.1.1
-    sriovCni: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-cni:network-operator-v26.1.1
-    ibSriovCni: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/ib-sriov-cni:network-operator-v26.1.1
-    ovsCni: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/ovs-cni-plugin:network-operator-v26.1.1
-    rdmaCni: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/rdma-cni:network-operator-v26.1.1
-    sriovDevicePlugin: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-device-plugin:network-operator-v26.1.1
-    resourcesInjector: cr.internal.puhui.chengfengerlai.com/ghcr.io/k8snetworkplumbingwg/network-resources-injector:v1.7.0
-    webhook: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator-webhook:network-operator-v26.1.1
+    operator: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator:network-operator-v26.1.1
+    sriovConfigDaemon: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator-config-daemon:network-operator-v26.1.1
+    sriovCni: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-cni:network-operator-v26.1.1
+    ibSriovCni: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/ib-sriov-cni:network-operator-v26.1.1
+    ovsCni: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/ovs-cni-plugin:network-operator-v26.1.1
+    rdmaCni: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/rdma-cni:network-operator-v26.1.1
+    sriovDevicePlugin: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-device-plugin:network-operator-v26.1.1
+    resourcesInjector: cr.yichang.puhui.chengfengerlai.com/ghcr.io/k8snetworkplumbingwg/network-resources-injector:v1.7.0
+    webhook: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox/sriov-network-operator-webhook:network-operator-v26.1.1
   # imagePullSecrest for SR-IOV Network Operator related images
   # imagePullSecrets: []
   sriovOperatorConfig:
@@ -191,7 +191,7 @@ maintenance-operator-chart:
   #imagePullSecrets: []
   operator:
     image:
-      repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox
+      repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox
       name: maintenance-operator
       tag: network-operator-v26.1.1
     admissionController:
@@ -254,7 +254,7 @@ operator:
                 operator: In
                 values: [ "" ]
   # -- Network Operator image repository.
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   # -- Network Operator image name
   image: network-operator
   # imagePullSecrets: []
@@ -315,7 +315,7 @@ operator:
       # -- Deploy init container.
       enable: true
       # -- Init container image repository.
-      repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox
+      repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/mellanox
       # -- Init container image name.
       image: network-operator-init-container
       # -- Init container image version.

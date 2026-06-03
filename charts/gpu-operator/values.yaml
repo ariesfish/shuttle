@@ -52,7 +52,7 @@ daemonsets:
     maxUnavailable: "1"
 
 validator:
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: gpu-operator
   # If version is not specified, then default is to use chart.AppVersion
   #version: ""
@@ -66,7 +66,7 @@ validator:
     env: []
 
 operator:
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: gpu-operator
   # If version is not specified, then default is to use chart.AppVersion
   #version: ""
@@ -130,7 +130,7 @@ driver:
   # use pre-compiled packages for NVIDIA driver installation.
   # only supported for as a tech-preview feature on ubuntu22.04 kernels.
   usePrecompiled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: driver
   version: "580.126.20"
   imagePullPolicy: IfNotPresent
@@ -178,7 +178,7 @@ driver:
       timeoutSeconds: 300
       deleteEmptyDir: false
   manager:
-    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
     image: k8s-driver-manager
     # When choosing a different version of k8s-driver-manager, DO NOT downgrade to a version lower than v0.6.4
     # to ensure k8s-driver-manager stays compatible with gpu-operator starting from v24.3.0
@@ -209,7 +209,7 @@ driver:
 
 toolkit:
   enabled: true
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
   image: container-toolkit
   version: v1.19.1
   imagePullPolicy: IfNotPresent
@@ -221,7 +221,7 @@ toolkit:
 
 devicePlugin:
   enabled: true
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: k8s-device-plugin
   version: v0.19.2
   imagePullPolicy: IfNotPresent
@@ -268,7 +268,7 @@ devicePlugin:
 dcgm:
   # disabled by default to use embedded nv-hostengine by exporter
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: dcgm
   version: 4.5.2-1-ubuntu22.04
   imagePullPolicy: IfNotPresent
@@ -280,7 +280,7 @@ dcgm:
 dcgmExporter:
   enabled: true
   annotations: {}
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/k8s
   image: dcgm-exporter
   version: 4.5.3-4.8.2-distroless
   imagePullPolicy: IfNotPresent
@@ -338,7 +338,7 @@ dcgmExporter:
       # DCGM_FI_DEV_MEM_CLOCK, gauge, Memory clock frequency (in MHz).
 gfd:
   enabled: true
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: k8s-device-plugin
   version: v0.19.2
   imagePullPolicy: IfNotPresent
@@ -349,7 +349,7 @@ gfd:
 
 migManager:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: k8s-mig-manager
   version: v0.14.2
   imagePullPolicy: IfNotPresent
@@ -412,7 +412,7 @@ migManager:
 
 nodeStatusExporter:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: gpu-operator
   # If version is not specified, then default is to use chart.AppVersion
   #version: ""
@@ -423,7 +423,7 @@ nodeStatusExporter:
 
 gds:
   enabled: true
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: nvidia-fs
   version: "2.27.3"
   imagePullPolicy: IfNotPresent
@@ -433,7 +433,7 @@ gds:
 
 gdrcopy:
   enabled: true
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: gdrdrv
   version: "v2.5.2"
   imagePullPolicy: IfNotPresent
@@ -443,7 +443,7 @@ gdrcopy:
 
 vgpuManager:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/""
+  repository: cr.yichang.puhui.chengfengerlai.com/""
   image: vgpu-manager
   version: ""
   imagePullPolicy: IfNotPresent
@@ -451,7 +451,7 @@ vgpuManager:
   env: []
   resources: {}
   driverManager:
-    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
     image: k8s-driver-manager
     # When choosing a different version of k8s-driver-manager, DO NOT downgrade to a version lower than v0.6.4
     # to ensure k8s-driver-manager stays compatible with gpu-operator starting from v24.3.0
@@ -465,7 +465,7 @@ vgpuManager:
 
 vgpuDeviceManager:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: vgpu-device-manager
   version: v0.4.2
   imagePullPolicy: IfNotPresent
@@ -478,7 +478,7 @@ vgpuDeviceManager:
 
 vfioManager:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: k8s-driver-manager
   version: v0.11.0
   imagePullPolicy: IfNotPresent
@@ -486,7 +486,7 @@ vfioManager:
   env: []
   resources: {}
   driverManager:
-    repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+    repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
     image: k8s-driver-manager
     # When choosing a different version of k8s-driver-manager, DO NOT downgrade to a version lower than v0.6.4
     # to ensure k8s-driver-manager stays compatible with gpu-operator starting from v24.3.0
@@ -506,7 +506,7 @@ kataManager:
 
 sandboxDevicePlugin:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia
   image: kubevirt-gpu-device-plugin
   version: v1.5.0
   imagePullPolicy: IfNotPresent
@@ -519,7 +519,7 @@ sandboxDevicePlugin:
 # Kata sandbox device plugin (used when sandboxWorkloads.mode is "kata").
 kataSandboxDevicePlugin:
   enabled: false
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: nvidia-sandbox-device-plugin
   version: "v0.0.3"
   imagePullPolicy: IfNotPresent
@@ -532,7 +532,7 @@ kataSandboxDevicePlugin:
 ccManager:
   enabled: false
   defaultMode: "on"
-  repository: cr.internal.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
+  repository: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/cloud-native
   image: k8s-cc-manager
   version: v0.4.0
   imagePullPolicy: IfNotPresent
@@ -547,7 +547,7 @@ extraObjects: []
 node-feature-discovery:
   priorityClassName: system-node-critical
   image:
-    repository: cr.internal.puhui.chengfengerlai.com/registry.k8s.io/nfd/node-feature-discovery
+    repository: cr.yichang.puhui.chengfengerlai.com/registry.k8s.io/nfd/node-feature-discovery
     tag: v0.18.3
     pullPolicy: IfNotPresent
   gc:

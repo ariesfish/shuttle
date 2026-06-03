@@ -41,13 +41,13 @@ crds:
     forceConflicts: false
     image:
       busybox:
-        registry: cr.internal.puhui.chengfengerlai.com/docker.io
+        registry: cr.yichang.puhui.chengfengerlai.com/docker.io
         repository: busybox
         tag: "latest"
         sha: ""
         pullPolicy: IfNotPresent
       kubectl:
-        registry: cr.internal.puhui.chengfengerlai.com/registry.k8s.io
+        registry: cr.yichang.puhui.chengfengerlai.com/registry.k8s.io
         repository: kubectl
         tag: ""  # defaults to the Kubernetes version
         sha: ""
@@ -962,7 +962,7 @@ alertmanager:
     ## Image of Alertmanager
     ##
     image:
-      registry: cr.internal.puhui.chengfengerlai.com/quay.io
+      registry: cr.yichang.puhui.chengfengerlai.com/quay.io
       repository: prometheus/alertmanager
       tag: v0.32.1
       sha: ""
@@ -2900,7 +2900,7 @@ prometheusOperator:
       ## Prometheus-operator webhook image
       ##
       image:
-        registry: cr.internal.puhui.chengfengerlai.com/quay.io
+        registry: cr.yichang.puhui.chengfengerlai.com/quay.io
         repository: prometheus-operator/admission-webhook
         # if not set appVersion field from Chart.yaml is used
         tag: ""
@@ -3019,7 +3019,7 @@ prometheusOperator:
     patch:
       enabled: true
       image:
-        registry: cr.internal.puhui.chengfengerlai.com/ghcr.io
+        registry: cr.yichang.puhui.chengfengerlai.com/ghcr.io
         repository: jkroepke/kube-webhook-certgen
         tag: 1.8.3
         sha: ""
@@ -3413,7 +3413,7 @@ prometheusOperator:
   ## Prometheus-operator image
   ##
   image:
-    registry: cr.internal.puhui.chengfengerlai.com/quay.io
+    registry: cr.yichang.puhui.chengfengerlai.com/quay.io
     repository: prometheus-operator/prometheus-operator
     # if not set appVersion field from Chart.yaml is used
     tag: ""
@@ -3440,7 +3440,7 @@ prometheusOperator:
   ##
   prometheusConfigReloader:
     image:
-      registry: cr.internal.puhui.chengfengerlai.com/quay.io
+      registry: cr.yichang.puhui.chengfengerlai.com/quay.io
       repository: prometheus-operator/prometheus-config-reloader
       # if not set appVersion field from Chart.yaml is used
       tag: ""
@@ -3461,7 +3461,7 @@ prometheusOperator:
   ## Thanos side-car image when configured
   ##
   thanosImage:
-    registry: cr.internal.puhui.chengfengerlai.com/quay.io
+    registry: cr.yichang.puhui.chengfengerlai.com/quay.io
     repository: thanos/thanos
     tag: v0.41.0
     sha: ""
@@ -4174,7 +4174,7 @@ prometheus:
     ## Image of Prometheus.
     ##
     image:
-      registry: cr.internal.puhui.chengfengerlai.com/quay.io
+      registry: cr.yichang.puhui.chengfengerlai.com/quay.io
       repository: prometheus/prometheus
       tag: v3.12.0-distroless
       sha: ""
@@ -5309,7 +5309,7 @@ thanosRuler:
     ## Image of ThanosRuler
     ##
     image:
-      registry: cr.internal.puhui.chengfengerlai.com/quay.io
+      registry: cr.yichang.puhui.chengfengerlai.com/quay.io
       repository: thanos/thanos
       tag: v0.41.0
       sha: ""
