@@ -79,6 +79,10 @@ spec:
                 - flashinfer_mxfp4
                 - "--page-size"
                 - '16'
+                - "--dyn-reasoning-parser"
+                - deepseek_v4
+                - "--dyn-tool-call-parser"
+                - deepseek_v4
                 - "--host"
                 - 0.0.0.0
                 - "--disaggregation-mode"
@@ -131,6 +135,12 @@ spec:
                   value: 300s
                 - name: NIXL_LOG_LEVEL
                   value: INFO
+                - name: NIXL_TELEMETRY_ENABLE
+                  value: "y"
+                - name: NIXL_TELEMETRY_EXPORTER
+                  value: prometheus
+                - name: NIXL_TELEMETRY_PROMETHEUS_PORT
+                  value: "19090"
               volumeMounts:
                 - name: model-cache
                   mountPath: "/home/dynamo/.cache/huggingface"
@@ -186,6 +196,10 @@ spec:
                 - flashinfer_mxfp4
                 - "--page-size"
                 - '16'
+                - "--dyn-reasoning-parser"
+                - deepseek_v4
+                - "--dyn-tool-call-parser"
+                - deepseek_v4
                 - "--host"
                 - 0.0.0.0
                 - "--disaggregation-mode"
@@ -238,6 +252,12 @@ spec:
                   value: 300s
                 - name: NIXL_LOG_LEVEL
                   value: INFO
+                - name: NIXL_TELEMETRY_ENABLE
+                  value: "y"
+                - name: NIXL_TELEMETRY_EXPORTER
+                  value: prometheus
+                - name: NIXL_TELEMETRY_PROMETHEUS_PORT
+                  value: "19090"
               volumeMounts:
                 - name: model-cache
                   mountPath: "/home/dynamo/.cache/huggingface"

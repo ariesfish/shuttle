@@ -74,8 +74,14 @@ spec:
     path: /metrics
     port: nixl
   selector:
+    matchExpressions:
+    - key: nvidia.com/dynamo-component-type
+      operator: In
+      values:
+      - worker
+      - decode
+      - prefill
     matchLabels:
-      nvidia.com/dynamo-component-type: worker
       nvidia.com/metrics-enabled: "true"
 ---
 apiVersion: monitoring.coreos.com/v1
