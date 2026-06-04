@@ -37,6 +37,54 @@ Rules:
 - BEFORE adding or modifying deployment YAML under `deployment/`, read the relevant documentation under `docs/` first.
 - NEVER commit files under `charts/packages/` or other generated `*.tgz` chart archives.
 
+## Deployment workflow for scarce GPU clusters
+
+The shared test cluster does not have enough GPUs to run rolling updates for large LLM deployments. Do not rely on the Dynamo operator's default rolling update behavior for `DynamoGraphDeployment` changes.
+
+When redeploying large GPU workloads under `deployment/`:
+
+1. Inspect the current state first:
+
+   ```bash
+   kubectl get dynamographdeployment,dynamocomponentdeployment,deploy,rs,pod,svc -n <namespace> | grep <deployment-name>
+   ```
+
+2. Delete the existing graph deployment and wait for deletion:
+
+   ```bash
+   kubectl delete dynamographdeployment -n <namespace> <deployment-name> --wait=true --timeout=120s
+   ```
+
+3. Clean up any leftover operator-managed resources before applying the new spec. Use the deployment name label when available, and verify with `kubectl get`:
+
+   ```bash
+   kubectl delete dynamocomponentdeployment -n <namespace> -l nvidia.com/dynamo-graph-deployment=<deployment-name> --ignore-not-found --wait=true --timeout=60s
+   kubectl delete pod,deploy,rs,svc -n <namespace> -l nvidia.com/dynamo-graph-deployment=<deployment-name> --ignore-not-found --wait=true --timeout=60s
+   kubectl get dynamographdeployment,dynamocomponentdeployment,deploy,rs,pod,svc -n <namespace> | grep <deployment-name>
+   ```
+
+   If resources remain because labels are missing or stale, delete the exact resource names before continuing.
+
+4. Only after old pods are gone, apply the new YAML:
+
+   ```bash
+   kubectl apply -f deployment/examples/<file>.yaml
+   ```
+
+5. Watch readiness and logs:
+
+   ```bash
+   kubectl get pods -n <namespace> | grep <deployment-name>
+   kubectl logs -n <namespace> <pod> -c main --previous --tail=200 --timestamps
+   kubectl logs -n <namespace> <pod> -c main --tail=200 --timestamps
+   ```
+
+Additional rules:
+
+- Do not start a new deployment while old GPU pods for the same workload are still `Running`, `Pending`, `ContainerCreating`, or `Terminating`.
+- Do not switch model IDs to uncached Hugging Face repositories when `HF_HUB_OFFLINE=1`; use the existing local snapshot path unless the user confirms the new checkpoint is present on every target node.
+- For H200/H800 DeepSeek-V4 SGLang experiments, consult `docs/sglang/deepseek-v4.md` and adapt the H200 guidance, but keep the actual checkpoint path aligned with what is cached on the cluster.
+
 ## Validation
 
 Before committing chart/script changes, run targeted checks relevant to the change:
