@@ -61,6 +61,100 @@ export interface CreateModelArtifactInput {
   quantization: string;
 }
 
+export interface ServingApplication {
+  id: string;
+  projectId: string;
+  name: string;
+  model: ModelIntent;
+  placement: PlacementIntent;
+  runtime: RuntimeIntent;
+  service: ServiceIntent;
+  optimization: OptimizationIntent;
+  desiredState: string;
+  phase: string;
+  activeVersion: number;
+  endpointUrl?: string;
+  grafanaUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelIntent {
+  family: string;
+  variant: string;
+  artifactId: string;
+  quantization: string;
+}
+
+export interface PlacementIntent {
+  clusterId: string;
+  acceleratorPoolId?: string;
+  namespace: string;
+}
+
+export interface RuntimeIntent {
+  backend: string;
+  topology: string;
+  recipe: string;
+  replicas?: Record<string, number>;
+}
+
+export interface ServiceIntent {
+  endpointName: string;
+  protocol: string;
+  exposure: string;
+}
+
+export interface OptimizationIntent {
+  target: string;
+  ttftMs?: number;
+  itlMs?: number;
+  profilingMode: string;
+}
+
+export interface CreateServingApplicationInput {
+  projectId: string;
+  name: string;
+  model: ModelIntent;
+  placement: PlacementIntent;
+  runtime: RuntimeIntent;
+  service: ServiceIntent;
+  optimization: OptimizationIntent;
+}
+
+export interface Task {
+  id: string;
+  clusterId: string;
+  type: string;
+  status: string;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EndpointRegistryEntry {
+  id: string;
+  servingApplicationId: string;
+  clusterId: string;
+  namespace: string;
+  endpointName: string;
+  url: string;
+  ready: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ObservabilityEntry {
+  servingApplicationId: string;
+  clusterId: string;
+  namespace: string;
+  grafanaUrl?: string;
+  prometheusUrl?: string;
+  prometheusQueries: Array<{ name: string; description: string; query: string }>;
+}
+
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 export function getApiSettings() {
@@ -112,4 +206,16 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(input),
   }),
+  listServingApplications: () => request<ServingApplication[]>('/v1/serving-applications'),
+  createServingApplication: (input: CreateServingApplicationInput) => request<ServingApplication>('/v1/serving-applications', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
+  createPreviewTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/preview-task`, { method: 'POST' }),
+  createApplyTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/apply-task`, { method: 'POST' }),
+  createRedeployTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/redeploy-task`, { method: 'POST' }),
+  createRetireTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/retire-task`, { method: 'POST' }),
+  listTasks: () => request<Task[]>('/v1/tasks'),
+  listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
+  getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/serving-applications/${appId}/observability`),
 };

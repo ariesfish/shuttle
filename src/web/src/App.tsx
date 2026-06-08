@@ -5,6 +5,7 @@ import { useI18n } from './i18n';
 import { ClustersPage } from './ClustersPage';
 import { ProjectsPage } from './ProjectsPage';
 import { ArtifactsPage } from './ArtifactsPage';
+import { ServingAppsPage } from './ServingAppsPage';
 import { getApiSettings, saveApiSettings } from './api';
 
 type Page = 'clusters' | 'projects' | 'artifacts' | 'servingApps' | 'tasks' | 'audit';
@@ -92,7 +93,8 @@ function AppContent() {
         {page === 'clusters' ? <ClustersPage /> : null}
         {page === 'projects' ? <ProjectsPage /> : null}
         {page === 'artifacts' ? <ArtifactsPage /> : null}
-        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' ? <Placeholder title={t(pageKeys[page])} /> : null}
+        {page === 'servingApps' ? <ServingAppsPage /> : null}
+        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' && page !== 'servingApps' ? <Placeholder title={t(pageKeys[page])} /> : null}
       </main>
     </div>
   );

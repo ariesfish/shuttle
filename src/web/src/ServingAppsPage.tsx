@@ -1,0 +1,196 @@
+import { FormEvent, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, type CreateServingApplicationInput, type ServingApplication } from './api';
+import { useI18n } from './i18n';
+
+const defaults = {
+  namespace: 'dynamo-system',
+  backend: 'vllm',
+  topology: 'pd-disagg',
+  recipe: 'deepseek-v4-flash-vllm-dgd-disagg',
+  protocol: 'openai-compatible',
+  exposure: 'cluster-local',
+  optimizationTarget: 'throughput',
+  profilingMode: 'disabled',
+};
+
+export function ServingAppsPage() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
+  const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters });
+  const artifacts = useQuery({ queryKey: ['model-artifacts'], queryFn: api.listModelArtifacts });
+  const apps = useQuery({ queryKey: ['serving-applications'], queryFn: api.listServingApplications });
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks });
+  const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints });
+
+  const [form, setForm] = useState({
+    projectId: '',
+    clusterId: '',
+    artifactId: '',
+    name: 'DeepSeek V4 Flash',
+    namespace: defaults.namespace,
+    endpointName: 'deepseek-v4-flash',
+  });
+
+  const selectedArtifact = artifacts.data?.find((artifact) => artifact.id === form.artifactId);
+  const createApp = useMutation({
+    mutationFn: (input: CreateServingApplicationInput) => api.createServingApplication(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serving-applications'] });
+    },
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: async ({ appId, action }: { appId: string; action: 'preview' | 'apply' | 'redeploy' | 'retire' }) => {
+      if (action === 'preview') return api.createPreviewTask(appId);
+      if (action === 'apply') return api.createApplyTask(appId);
+      if (action === 'redeploy') return api.createRedeployTask(appId);
+      return api.createRetireTask(appId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['serving-applications'] });
+      queryClient.invalidateQueries({ queryKey: ['endpoints'] });
+    },
+  });
+
+  const endpointsByApp = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const endpoint of endpoints.data ?? []) {
+      map.set(endpoint.servingApplicationId, endpoint.url);
+    }
+    return map;
+  }, [endpoints.data]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedArtifact) return;
+    createApp.mutate({
+      projectId: form.projectId,
+      name: form.name,
+      model: {
+        family: selectedArtifact.family,
+        variant: selectedArtifact.variant,
+        artifactId: selectedArtifact.id,
+        quantization: selectedArtifact.quantization,
+      },
+      placement: {
+        clusterId: form.clusterId,
+        namespace: form.namespace,
+      },
+      runtime: {
+        backend: defaults.backend,
+        topology: defaults.topology,
+        recipe: defaults.recipe,
+      },
+      service: {
+        endpointName: form.endpointName,
+        protocol: defaults.protocol,
+        exposure: defaults.exposure,
+      },
+      optimization: {
+        target: defaults.optimizationTarget,
+        profilingMode: defaults.profilingMode,
+      },
+    });
+  }
+
+  return (
+    <div className="grid two">
+      <section className="card">
+        <h1 className="page-title">{t('servingAppsTitle')}</h1>
+        <p className="page-description">{t('servingAppsDescription')}</p>
+        <form className="form" onSubmit={submit}>
+          <SelectField label={t('project')} value={form.projectId} onChange={(value) => setForm({ ...form, projectId: value })} options={(projects.data ?? []).map((project) => [project.id, project.name])} />
+          <SelectField label={t('cluster')} value={form.clusterId} onChange={(value) => setForm({ ...form, clusterId: value })} options={(clusters.data ?? []).map((cluster) => [cluster.id, cluster.name])} />
+          <SelectField label={t('artifact')} value={form.artifactId} onChange={(value) => setForm({ ...form, artifactId: value })} options={(artifacts.data ?? []).map((artifact) => [artifact.id, `${artifact.family}/${artifact.variant}:${artifact.revision}`])} />
+          <InputField label={t('name')} value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
+          <InputField label={t('namespace')} value={form.namespace} onChange={(value) => setForm({ ...form, namespace: value })} />
+          <InputField label={t('endpointName')} value={form.endpointName} onChange={(value) => setForm({ ...form, endpointName: value })} />
+          <div className="grid">
+            <span className="badge muted">{t('backend')}: {defaults.backend}</span>
+            <span className="badge muted">{t('topology')}: {defaults.topology}</span>
+            <span className="badge muted">{t('recipe')}: {defaults.recipe}</span>
+          </div>
+          <button className="button" disabled={createApp.isPending || !form.projectId || !form.clusterId || !form.artifactId}>{t('createServingApp')}</button>
+          {createApp.error ? <p className="error">{createApp.error.message}</p> : null}
+        </form>
+      </section>
+      <section className="grid">
+        <section className="card">
+          {apps.isLoading ? <p>{t('loading')}</p> : null}
+          {apps.error ? <p className="error">{t('error')}: {apps.error.message}</p> : null}
+          {apps.data?.length ? (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('name')}</th>
+                  <th>{t('phase')}</th>
+                  <th>{t('endpoint')}</th>
+                  <th>{t('actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {apps.data.map((app) => (
+                  <ServingAppRow key={app.id} app={app} endpoint={endpointsByApp.get(app.id)} onAction={(action) => actionMutation.mutate({ appId: app.id, action })} disabled={actionMutation.isPending} />
+                ))}
+              </tbody>
+            </table>
+          ) : apps.isLoading ? null : <p className="muted">{t('noData')}</p>}
+        </section>
+        <section className="card">
+          <h2>{t('tasksTitle')}</h2>
+          {tasks.data?.slice(-8).reverse().map((task) => (
+            <div key={task.id} className="card" style={{ marginBottom: 8 }}>
+              <strong>{task.type}</strong> <span className="badge muted">{task.status}</span>
+              <div className="muted"><code>{task.id}</code></div>
+              {task.error ? <div className="error">{task.error}</div> : null}
+            </div>
+          )) ?? <p className="muted">{t('noData')}</p>}
+        </section>
+      </section>
+    </div>
+  );
+}
+
+function ServingAppRow({ app, endpoint, onAction, disabled }: { app: ServingApplication; endpoint?: string; onAction: (action: 'preview' | 'apply' | 'redeploy' | 'retire') => void; disabled: boolean }) {
+  const { t } = useI18n();
+  const url = endpoint || app.endpointUrl;
+  return (
+    <tr>
+      <td><strong>{app.name}</strong><div className="muted"><code>{app.id}</code></div><div className="muted">{app.model.family}/{app.model.variant}</div></td>
+      <td><span className="badge">{app.phase}</span></td>
+      <td>{url ? <code>{url}</code> : <span className="muted">-</span>}</td>
+      <td>
+        <div className="toolbar">
+          <button className="button secondary" disabled={disabled} onClick={() => onAction('preview')}>{t('preview')}</button>
+          <button className="button secondary" disabled={disabled} onClick={() => onAction('apply')}>{t('apply')}</button>
+          <button className="button secondary" disabled={disabled} onClick={() => onAction('redeploy')}>{t('redeploy')}</button>
+          <button className="button secondary" disabled={disabled} onClick={() => onAction('retire')}>{t('retire')}</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function InputField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="field">
+      <span className="label">{label}</span>
+      <input className="input" required value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
+  return (
+    <label className="field">
+      <span className="label">{label}</span>
+      <select className="select" required value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">-</option>
+        {options.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}
+      </select>
+    </label>
+  );
+}
