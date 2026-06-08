@@ -253,6 +253,7 @@ type KubectlResourceDeleter struct {
 	Timeout     time.Duration
 	Interval    time.Duration
 	LabelKey    string
+	runKubectl  func(context.Context, string, ...string) (string, error)
 }
 
 func (r KubectlDryRunner) ServerSideDryRun(ctx context.Context, manifests []Manifest) (DryRunResult, error) {
@@ -356,7 +357,11 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 	if kubectl == "" {
 		kubectl = "kubectl"
 	}
-	deleteOut, err := runKubectlCombined(ctx, kubectl, "-n", ref.Namespace, "delete", "dynamographdeployment", ref.Name, "--ignore-not-found", "--wait=true", "--timeout=120s")
+	runKubectl := d.runKubectl
+	if runKubectl == nil {
+		runKubectl = runKubectlCombined
+	}
+	deleteOut, err := runKubectl(ctx, kubectl, "-n", ref.Namespace, "delete", "dynamographdeployment", ref.Name, "--ignore-not-found", "--wait=true", "--timeout=120s")
 	if err != nil {
 		return DeleteResult{}, fmt.Errorf("kubectl delete dynamographdeployment failed: %w: %s", err, strings.TrimSpace(deleteOut))
 	}
@@ -374,10 +379,27 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 		{kind: "dynamocomponentdeployment", timeout: "60s"},
 		{kind: "pod,deploy,rs,svc", timeout: "60s"},
 	} {
-		out, err := runKubectlCombined(ctx, kubectl, "-n", ref.Namespace, "delete", cleanup.kind, "-l", selector, "--ignore-not-found", "--wait=true", "--timeout="+cleanup.timeout)
+		out, err := runKubectl(ctx, kubectl, "-n", ref.Namespace, "delete", cleanup.kind, "-l", selector, "--ignore-not-found", "--wait=true", "--timeout="+cleanup.timeout)
 		cleanupMessages = append(cleanupMessages, strings.TrimSpace(out))
 		if err != nil {
 			return DeleteResult{}, fmt.Errorf("kubectl delete %s by label failed: %w: %s", cleanup.kind, err, strings.TrimSpace(out))
+		}
+	}
+	for _, cleanup := range []struct {
+		kind    string
+		name    string
+		timeout string
+	}{
+		{kind: "dynamocomponentdeployment", name: ref.Name, timeout: "60s"},
+		{kind: "deploy", name: ref.Name, timeout: "60s"},
+		{kind: "rs", name: ref.Name, timeout: "60s"},
+		{kind: "pod", name: ref.Name, timeout: "60s"},
+		{kind: "svc", name: ref.Name, timeout: "60s"},
+	} {
+		out, err := runKubectl(ctx, kubectl, "-n", ref.Namespace, "delete", cleanup.kind, cleanup.name, "--ignore-not-found", "--wait=true", "--timeout="+cleanup.timeout)
+		cleanupMessages = append(cleanupMessages, strings.TrimSpace(out))
+		if err != nil {
+			return DeleteResult{}, fmt.Errorf("kubectl delete %s/%s by exact name failed: %w: %s", cleanup.kind, cleanup.name, err, strings.TrimSpace(out))
 		}
 	}
 
@@ -394,7 +416,7 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		getOut, err := runKubectlCombined(waitCtx, kubectl, "-n", ref.Namespace, "get", "dynamographdeployment", ref.Name)
+		getOut, err := runKubectl(waitCtx, kubectl, "-n", ref.Namespace, "get", "dynamographdeployment", ref.Name)
 		if err != nil && (strings.Contains(getOut, "NotFound") || strings.Contains(getOut, "not found")) {
 			return DeleteResult{Deleted: true, Message: strings.Join(nonEmptyStrings(cleanupMessages), "\n")}, nil
 		}

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"inference-platform/internal/management"
@@ -92,6 +93,36 @@ func TestTaskExecutorDeleteBeforeApply(t *testing.T) {
 	}
 }
 
+func TestKubectlResourceDeleterUsesExactFallbackAfterLabelCleanup(t *testing.T) {
+	var calls []string
+	deleter := KubectlResourceDeleter{
+		Timeout:  1,
+		Interval: 1,
+		runKubectl: func(_ context.Context, _ string, args ...string) (string, error) {
+			call := strings.Join(args, " ")
+			calls = append(calls, call)
+			if strings.Contains(call, " get dynamographdeployment deepseek-v4-flash") {
+				return "Error from server (NotFound): dynamographdeployments.nvidia.com \"deepseek-v4-flash\" not found", errors.New("not found")
+			}
+			return "ok", nil
+		},
+	}
+	result, err := deleter.DeleteAndWait(context.Background(), ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"})
+	if err != nil {
+		t.Fatalf("delete and wait: %v", err)
+	}
+	if !result.Deleted {
+		t.Fatalf("expected deleted result: %+v", result)
+	}
+	assertKubectlCall(t, calls, "delete dynamocomponentdeployment -l nvidia.com/dynamo-graph-deployment=deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete pod,deploy,rs,svc -l nvidia.com/dynamo-graph-deployment=deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete dynamocomponentdeployment deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete deploy deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete rs deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete pod deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete svc deepseek-v4-flash")
+}
+
 func TestTaskExecutorRetireDeployment(t *testing.T) {
 	deleter := &fakeDeleter{result: DeleteResult{Deleted: true, Message: "deleted"}}
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
@@ -141,6 +172,16 @@ func TestTaskExecutorPropagatesDryRunError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
+
+func assertKubectlCall(t *testing.T, calls []string, expected string) {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, expected) {
+			return
+		}
+	}
+	t.Fatalf("expected kubectl call containing %q, got %+v", expected, calls)
 }
 
 type fakeDryRunner struct {
