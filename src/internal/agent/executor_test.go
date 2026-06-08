@@ -59,7 +59,7 @@ func TestTaskExecutorApplyDeployment(t *testing.T) {
 	if watcher.ref.Name != "deepseek-v4-flash" || watcher.ref.Namespace != "dynamo-system" {
 		t.Fatalf("unexpected watch ref: %+v", watcher.ref)
 	}
-	if result["mode"] != "apply-and-watch" || result["phase"] != "Ready" {
+	if result["mode"] != "apply-and-watch" || result["phase"] != "Ready" || result["endpointUrl"] == "" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }

@@ -93,4 +93,12 @@ curl -s -X POST localhost:8080/v1/serving-applications/app-5/retire-task
 
 For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeployment` and waits for it to disappear.
 
+List registered endpoints:
+
+```bash
+curl -s localhost:8080/v1/endpoints
+```
+
+Apply/redeploy task completion creates or updates the endpoint registry entry. Retire task completion removes it.
+
 IDs are generated sequentially in the JSON data file.

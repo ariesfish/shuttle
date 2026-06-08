@@ -242,8 +242,15 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if readyApp.Phase != ServingApplicationPhaseReady {
-		t.Fatalf("expected app phase Ready, got %+v", readyApp)
+	if readyApp.Phase != ServingApplicationPhaseReady || readyApp.EndpointURL == "" {
+		t.Fatalf("expected app Ready with endpoint, got %+v", readyApp)
+	}
+	endpoints, err := store.ListEndpoints()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(endpoints) != 1 || endpoints[0].ServingApplicationID != app.ID || !endpoints[0].Ready {
+		t.Fatalf("unexpected endpoints: %+v", endpoints)
 	}
 
 	leasedRetire, err := forceLeaseTask(store, cluster.ID, retireTask.ID, agent.ID)
@@ -260,6 +267,13 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	}
 	if retiredApp.Phase != ServingApplicationPhaseRetired {
 		t.Fatalf("expected app phase Retired, got %+v", retiredApp)
+	}
+	endpoints, err = store.ListEndpoints()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(endpoints) != 0 {
+		t.Fatalf("expected endpoint cleanup, got %+v", endpoints)
 	}
 }
 

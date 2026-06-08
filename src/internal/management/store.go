@@ -33,6 +33,7 @@ type Store interface {
 	CreateServingApplication(CreateServingApplicationRequest) (ServingApplication, error)
 	ListServingApplications() ([]ServingApplication, error)
 	GetServingApplication(string) (ServingApplication, error)
+	ListEndpoints() ([]EndpointRegistryEntry, error)
 	CreateTask(CreateTaskRequest) (Task, error)
 	CreatePreviewTask(CreatePreviewTaskRequest) (Task, error)
 	CreateApplyTask(CreateApplyTaskRequest) (Task, error)
@@ -51,13 +52,14 @@ type FileStore struct {
 }
 
 type storeData struct {
-	NextID              int                           `json:"nextId"`
-	Projects            map[string]Project            `json:"projects"`
-	Clusters            map[string]InferenceCluster   `json:"clusters"`
-	Agents              map[string]ClusterAgent       `json:"agents"`
-	ModelArtifacts      map[string]ModelArtifact      `json:"modelArtifacts"`
-	ServingApplications map[string]ServingApplication `json:"servingApplications"`
-	Tasks               map[string]Task               `json:"tasks"`
+	NextID              int                              `json:"nextId"`
+	Projects            map[string]Project               `json:"projects"`
+	Clusters            map[string]InferenceCluster      `json:"clusters"`
+	Agents              map[string]ClusterAgent          `json:"agents"`
+	ModelArtifacts      map[string]ModelArtifact         `json:"modelArtifacts"`
+	ServingApplications map[string]ServingApplication    `json:"servingApplications"`
+	Endpoints           map[string]EndpointRegistryEntry `json:"endpoints"`
+	Tasks               map[string]Task                  `json:"tasks"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -77,6 +79,7 @@ func newStoreData() storeData {
 		Agents:              map[string]ClusterAgent{},
 		ModelArtifacts:      map[string]ModelArtifact{},
 		ServingApplications: map[string]ServingApplication{},
+		Endpoints:           map[string]EndpointRegistryEntry{},
 		Tasks:               map[string]Task{},
 	}
 }
@@ -339,6 +342,18 @@ func (s *FileStore) GetServingApplication(id string) (ServingApplication, error)
 	return app, nil
 }
 
+func (s *FileStore) ListEndpoints() ([]EndpointRegistryEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	endpoints := make([]EndpointRegistryEntry, 0, len(s.data.Endpoints))
+	for _, endpoint := range s.data.Endpoints {
+		endpoints = append(endpoints, endpoint)
+	}
+	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].CreatedAt.Before(endpoints[j].CreatedAt) })
+	return endpoints, nil
+}
+
 func (s *FileStore) CreateTask(req CreateTaskRequest) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -455,6 +470,9 @@ func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task
 			"servingApplicationId": app.ID,
 			"resourceName":         kubernetesName(app.Name),
 			"namespace":            app.Placement.Namespace,
+			"endpointName":         app.Service.EndpointName,
+			"protocol":             app.Service.Protocol,
+			"exposure":             app.Service.Exposure,
 			"manifests": []any{map[string]any{
 				"name":    manifest.Name,
 				"content": manifest.Content,
@@ -566,14 +584,73 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 		app.Phase = ServingApplicationPhaseReady
 		if phase, _ := task.Result["phase"].(string); strings.EqualFold(phase, "failed") || strings.EqualFold(phase, "error") {
 			app.Phase = ServingApplicationPhaseFailed
+		} else {
+			app = s.upsertEndpointForTaskLocked(app, task)
 		}
 	case TaskTypeRetireDeployment:
 		app.Phase = ServingApplicationPhaseRetired
+		s.removeEndpointForServingApplicationLocked(app.ID)
 	default:
 		return
 	}
 	app.UpdatedAt = s.now().UTC()
 	s.data.ServingApplications[app.ID] = app
+}
+
+func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, task Task) ServingApplication {
+	endpointURL, _ := task.Result["endpointUrl"].(string)
+	if strings.TrimSpace(endpointURL) == "" {
+		endpointURL = defaultEndpointURL(app)
+	}
+	ready := app.Phase == ServingApplicationPhaseReady
+	for _, endpoint := range s.data.Endpoints {
+		if endpoint.ServingApplicationID == app.ID {
+			endpoint.ClusterID = app.Placement.ClusterID
+			endpoint.Namespace = app.Placement.Namespace
+			endpoint.EndpointName = app.Service.EndpointName
+			endpoint.URL = endpointURL
+			endpoint.Ready = ready
+			endpoint.UpdatedAt = s.now().UTC()
+			s.data.Endpoints[endpoint.ID] = endpoint
+			app.EndpointURL = endpointURL
+			return app
+		}
+	}
+	now := s.now().UTC()
+	endpoint := EndpointRegistryEntry{
+		ID:                   s.nextID("endpoint"),
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Namespace:            app.Placement.Namespace,
+		EndpointName:         app.Service.EndpointName,
+		URL:                  endpointURL,
+		Ready:                ready,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	s.data.Endpoints[endpoint.ID] = endpoint
+	app.EndpointURL = endpointURL
+	return app
+}
+
+func (s *FileStore) removeEndpointForServingApplicationLocked(appID string) {
+	for id, endpoint := range s.data.Endpoints {
+		if endpoint.ServingApplicationID == appID {
+			delete(s.data.Endpoints, id)
+		}
+	}
+}
+
+func defaultEndpointURL(app ServingApplication) string {
+	endpointName := strings.TrimSpace(app.Service.EndpointName)
+	if endpointName == "" {
+		endpointName = kubernetesName(app.Name)
+	}
+	namespace := strings.TrimSpace(app.Placement.Namespace)
+	if namespace == "" {
+		namespace = "default"
+	}
+	return "http://" + endpointName + "." + namespace + ".svc.cluster.local:8000/v1"
 }
 
 func (s *FileStore) sortedTasksLocked() []Task {
@@ -625,6 +702,9 @@ func (s *FileStore) load() error {
 	}
 	if s.data.ServingApplications == nil {
 		s.data.ServingApplications = map[string]ServingApplication{}
+	}
+	if s.data.Endpoints == nil {
+		s.data.Endpoints = map[string]EndpointRegistryEntry{}
 	}
 	if s.data.Tasks == nil {
 		s.data.Tasks = map[string]Task{}

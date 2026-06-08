@@ -159,6 +159,7 @@ func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, 
 		"stderr":        applyResult.Stderr,
 		"resource":      resourceRef.Name,
 		"namespace":     resourceRef.Namespace,
+		"endpointUrl":   endpointURLFromPayload(resourceRef, manifests),
 		"phase":         watchResult.Phase,
 		"message":       watchResult.Message,
 		"handledAt":     e.now().UTC().Format(time.RFC3339),
@@ -454,6 +455,10 @@ func nonEmptyStrings(values []string) []string {
 		}
 	}
 	return output
+}
+
+func endpointURLFromPayload(ref ResourceRef, _ []Manifest) string {
+	return "http://" + ref.Name + "." + ref.Namespace + ".svc.cluster.local:8000/v1"
 }
 
 func resourceRefFromPayload(payload map[string]any) (ResourceRef, error) {

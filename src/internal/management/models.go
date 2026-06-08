@@ -106,6 +106,18 @@ type OptimizationIntent struct {
 	ProfilingMode string   `json:"profilingMode"`
 }
 
+type EndpointRegistryEntry struct {
+	ID                   string    `json:"id"`
+	ServingApplicationID string    `json:"servingApplicationId"`
+	ClusterID            string    `json:"clusterId"`
+	Namespace            string    `json:"namespace"`
+	EndpointName         string    `json:"endpointName"`
+	URL                  string    `json:"url"`
+	Ready                bool      `json:"ready"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
 type TaskStatus string
 
 const (
