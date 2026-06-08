@@ -49,7 +49,7 @@ func TestServingApplicationControlLoopCompletesDeploymentTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete task: %v", err)
 	}
-	if completion.Phase != ServingApplicationPhaseReady || !completion.UpsertEndpoint || completion.EndpointURL == "" {
+	if completion.Phase != ServingApplicationPhaseReady || completion.EndpointOperation != EndpointOperationUpsert || completion.Endpoint.URL == "" {
 		t.Fatalf("unexpected completion plan: %+v", completion)
 	}
 }
@@ -73,7 +73,7 @@ func TestServingApplicationControlLoopCompletesRetireTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete task: %v", err)
 	}
-	if completion.Phase != ServingApplicationPhaseRetired || !completion.RemoveEndpoint {
+	if completion.Phase != ServingApplicationPhaseRetired || completion.EndpointOperation != EndpointOperationRemove {
 		t.Fatalf("unexpected completion plan: %+v", completion)
 	}
 }

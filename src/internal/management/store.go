@@ -753,47 +753,38 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 		return
 	}
 	s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, plan.Phase, plan.Reason)
-	if plan.UpsertEndpoint {
+	switch plan.EndpointOperation {
+	case EndpointOperationUpsert:
 		updatedApp := s.data.ServingApplications[app.ID]
-		updatedApp = s.upsertEndpointForTaskLocked(updatedApp, plan.EndpointURL)
+		updatedApp = s.upsertEndpointLocked(updatedApp, plan.Endpoint)
 		updatedApp.UpdatedAt = s.now().UTC()
 		s.data.ServingApplications[updatedApp.ID] = updatedApp
-	}
-	if plan.RemoveEndpoint {
+	case EndpointOperationRemove:
 		s.removeEndpointForServingApplicationLocked(app.ID)
 	}
 }
 
-func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, endpointURL string) ServingApplication {
-	endpointURL = strings.TrimSpace(endpointURL)
-	ready := app.Phase == ServingApplicationPhaseReady
+func (s *FileStore) upsertEndpointLocked(app ServingApplication, planned EndpointRegistryEntry) ServingApplication {
+	planned.ServingApplicationID = app.ID
 	for _, endpoint := range s.data.Endpoints {
 		if endpoint.ServingApplicationID == app.ID {
-			endpoint.ClusterID = app.Placement.ClusterID
-			endpoint.Namespace = app.Placement.Namespace
-			endpoint.EndpointName = app.Service.EndpointName
-			endpoint.URL = endpointURL
-			endpoint.Ready = ready
+			endpoint.ClusterID = planned.ClusterID
+			endpoint.Namespace = planned.Namespace
+			endpoint.EndpointName = planned.EndpointName
+			endpoint.URL = planned.URL
+			endpoint.Ready = planned.Ready
 			endpoint.UpdatedAt = s.now().UTC()
 			s.data.Endpoints[endpoint.ID] = endpoint
-			app.EndpointURL = endpointURL
+			app.EndpointURL = planned.URL
 			return app
 		}
 	}
 	now := s.now().UTC()
-	endpoint := EndpointRegistryEntry{
-		ID:                   s.nextID("endpoint"),
-		ServingApplicationID: app.ID,
-		ClusterID:            app.Placement.ClusterID,
-		Namespace:            app.Placement.Namespace,
-		EndpointName:         app.Service.EndpointName,
-		URL:                  endpointURL,
-		Ready:                ready,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
-	s.data.Endpoints[endpoint.ID] = endpoint
-	app.EndpointURL = endpointURL
+	planned.ID = s.nextID("endpoint")
+	planned.CreatedAt = now
+	planned.UpdatedAt = now
+	s.data.Endpoints[planned.ID] = planned
+	app.EndpointURL = planned.URL
 	return app
 }
 

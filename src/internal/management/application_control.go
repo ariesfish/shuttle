@@ -21,12 +21,19 @@ type ServingApplicationTaskPlan struct {
 	TransitionReason string
 }
 
+type EndpointOperation string
+
+const (
+	EndpointOperationNone   EndpointOperation = ""
+	EndpointOperationUpsert EndpointOperation = "upsert"
+	EndpointOperationRemove EndpointOperation = "remove"
+)
+
 type ServingApplicationCompletionPlan struct {
-	Phase          ServingApplicationPhase
-	Reason         string
-	EndpointURL    string
-	UpsertEndpoint bool
-	RemoveEndpoint bool
+	Phase             ServingApplicationPhase
+	Reason            string
+	EndpointOperation EndpointOperation
+	Endpoint          EndpointRegistryEntry
 }
 
 func (c ServingApplicationControlLoop) PlanPreviewTask(app ServingApplication, manifest RenderedDeploymentManifest) (ServingApplicationTaskPlan, error) {
@@ -134,16 +141,39 @@ func (c ServingApplicationControlLoop) resourceName(app ServingApplication) stri
 	return resourceName
 }
 
-func (c ServingApplicationControlLoop) defaultEndpointURL(app ServingApplication) string {
+func (c ServingApplicationControlLoop) endpointName(app ServingApplication) string {
 	endpointName := strings.TrimSpace(app.Service.EndpointName)
 	if endpointName == "" {
 		endpointName = c.resourceName(app)
 	}
+	return endpointName
+}
+
+func (c ServingApplicationControlLoop) namespace(app ServingApplication) string {
 	namespace := strings.TrimSpace(app.Placement.Namespace)
 	if namespace == "" {
 		namespace = "default"
 	}
-	return "http://" + endpointName + "." + namespace + ".svc.cluster.local:8000/v1"
+	return namespace
+}
+
+func (c ServingApplicationControlLoop) defaultEndpointURL(app ServingApplication) string {
+	return "http://" + c.endpointName(app) + "." + c.namespace(app) + ".svc.cluster.local:8000/v1"
+}
+
+func (c ServingApplicationControlLoop) ReadyEndpoint(app ServingApplication, endpointURL string) EndpointRegistryEntry {
+	endpointURL = strings.TrimSpace(endpointURL)
+	if endpointURL == "" {
+		endpointURL = c.defaultEndpointURL(app)
+	}
+	return EndpointRegistryEntry{
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Namespace:            c.namespace(app),
+		EndpointName:         c.endpointName(app),
+		URL:                  endpointURL,
+		Ready:                true,
+	}
 }
 
 func (c ServingApplicationControlLoop) CompleteTask(app ServingApplication, task Task) (ServingApplicationCompletionPlan, error) {
@@ -169,13 +199,14 @@ func (c ServingApplicationControlLoop) CompleteTask(app ServingApplication, task
 			phase = ServingApplicationPhaseFailed
 			reason = taskResultMessage(task)
 		}
-		endpointURL := strings.TrimSpace(value.EndpointURL)
-		if endpointURL == "" {
-			endpointURL = c.defaultEndpointURL(app)
+		completion := ServingApplicationCompletionPlan{Phase: phase, Reason: reason}
+		if phase == ServingApplicationPhaseReady {
+			completion.EndpointOperation = EndpointOperationUpsert
+			completion.Endpoint = c.ReadyEndpoint(app, value.EndpointURL)
 		}
-		return ServingApplicationCompletionPlan{Phase: phase, Reason: reason, EndpointURL: endpointURL, UpsertEndpoint: phase == ServingApplicationPhaseReady}, nil
+		return completion, nil
 	case platformtask.RetireResult:
-		return ServingApplicationCompletionPlan{Phase: ServingApplicationPhaseRetired, Reason: "retire succeeded", RemoveEndpoint: true}, nil
+		return ServingApplicationCompletionPlan{Phase: ServingApplicationPhaseRetired, Reason: "retire succeeded", EndpointOperation: EndpointOperationRemove, Endpoint: EndpointRegistryEntry{ServingApplicationID: app.ID}}, nil
 	default:
 		return ServingApplicationCompletionPlan{}, nil
 	}
