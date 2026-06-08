@@ -90,7 +90,7 @@ spec:
       serviceAccountName: cluster-agent
       containers:
         - name: cluster-agent
-          image: registry.example.com/inference-platform/cluster-agent:latest
+          image: cr.yichang.puhui.chengfengerlai.com/aistudio/cluster-agent:dev
           imagePullPolicy: IfNotPresent
           args:
             - "-management-url=$(MANAGEMENT_URL)"

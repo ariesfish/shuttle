@@ -32,6 +32,38 @@ The Management Plane does not store a broad kubeconfig for the Inference Cluster
 6. The Management Plane creates or updates the Cluster Agent record and returns `agentId`.
 7. The Agent starts heartbeat and task polling loops.
 
+## Build Image
+
+Build a local linux/amd64 image:
+
+```bash
+IMAGE_TAG=dev ./scripts/build-cluster-agent-image.sh
+```
+
+Build and push to the default registry:
+
+```bash
+IMAGE_TAG=dev PUSH=true ./scripts/build-cluster-agent-image.sh
+```
+
+Defaults:
+
+```text
+IMAGE_REPO=cr.yichang.puhui.chengfengerlai.com/aistudio/cluster-agent
+IMAGE_TAG=dev
+PLATFORM=linux/amd64
+```
+
+Override as needed:
+
+```bash
+IMAGE_REPO=cr.yichang.puhui.chengfengerlai.com/aistudio/cluster-agent \
+IMAGE_TAG=v0.1.0 \
+PLATFORM=linux/amd64 \
+PUSH=true \
+./scripts/build-cluster-agent-image.sh
+```
+
 ## Install
 
 Create a cluster in the Web Console first, then copy its `clusterId`.
@@ -39,6 +71,10 @@ Create a cluster in the Web Console first, then copy its `clusterId`.
 Edit `deployment/cluster-agent.yaml`:
 
 ```yaml
+containers:
+  - name: cluster-agent
+    image: cr.yichang.puhui.chengfengerlai.com/aistudio/cluster-agent:dev
+
 data:
   management-url: "https://management.example.com"
   cluster-id: "cluster-..."
@@ -100,5 +136,6 @@ Recommended hardening:
 - Use a per-cluster Agent token.
 - Restrict RBAC to managed namespaces when possible.
 - Pin the Agent image by digest.
+- Use immutable image tags for shared clusters instead of `dev`.
 - Add NetworkPolicy allowing only outbound Management Plane access and kube-apiserver access.
 - Add readiness/liveness probes once Agent health endpoints exist.
