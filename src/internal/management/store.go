@@ -34,6 +34,7 @@ type Store interface {
 	ListServingApplications() ([]ServingApplication, error)
 	GetServingApplication(string) (ServingApplication, error)
 	ListEndpoints() ([]EndpointRegistryEntry, error)
+	GetObservabilityEntry(string) (ObservabilityEntry, error)
 	CreateTask(CreateTaskRequest) (Task, error)
 	CreatePreviewTask(CreatePreviewTaskRequest) (Task, error)
 	CreateApplyTask(CreateApplyTaskRequest) (Task, error)
@@ -122,11 +123,13 @@ func (s *FileStore) CreateCluster(req CreateClusterRequest) (InferenceCluster, e
 
 	now := s.now().UTC()
 	cluster := InferenceCluster{
-		ID:          s.nextID("cluster"),
-		Name:        name,
-		Description: strings.TrimSpace(req.Description),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            s.nextID("cluster"),
+		Name:          name,
+		Description:   strings.TrimSpace(req.Description),
+		PrometheusURL: strings.TrimSpace(req.PrometheusURL),
+		GrafanaURL:    strings.TrimSpace(req.GrafanaURL),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	s.data.Clusters[cluster.ID] = cluster
 	return cluster, s.saveLocked()
@@ -352,6 +355,21 @@ func (s *FileStore) ListEndpoints() ([]EndpointRegistryEntry, error) {
 	}
 	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].CreatedAt.Before(endpoints[j].CreatedAt) })
 	return endpoints, nil
+}
+
+func (s *FileStore) GetObservabilityEntry(appID string) (ObservabilityEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	app, ok := s.data.ServingApplications[appID]
+	if !ok {
+		return ObservabilityEntry{}, ErrNotFound
+	}
+	cluster, ok := s.data.Clusters[app.Placement.ClusterID]
+	if !ok {
+		return ObservabilityEntry{}, fmt.Errorf("%w: cluster does not exist", ErrInvalidInput)
+	}
+	return buildObservabilityEntry(app, cluster), nil
 }
 
 func (s *FileStore) CreateTask(req CreateTaskRequest) (Task, error) {
@@ -638,6 +656,39 @@ func (s *FileStore) removeEndpointForServingApplicationLocked(appID string) {
 		if endpoint.ServingApplicationID == appID {
 			delete(s.data.Endpoints, id)
 		}
+	}
+}
+
+func buildObservabilityEntry(app ServingApplication, cluster InferenceCluster) ObservabilityEntry {
+	deploymentName := kubernetesName(app.Name)
+	namespace := app.Placement.Namespace
+	grafanaURL := cluster.GrafanaURL
+	if grafanaURL != "" {
+		grafanaURL = strings.TrimRight(grafanaURL, "/") + "/dashboards?var-namespace=" + namespace + "&var-deployment=" + deploymentName
+	}
+	return ObservabilityEntry{
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Namespace:            namespace,
+		GrafanaURL:           grafanaURL,
+		PrometheusURL:        cluster.PrometheusURL,
+		PrometheusQueries: []PrometheusQuery{
+			{
+				Name:        "frontend_request_rate",
+				Description: "Approximate frontend request rate for the Serving Application.",
+				Query:       `sum(rate(dynamo_frontend_requests_total{namespace="` + namespace + `"}[5m]))`,
+			},
+			{
+				Name:        "gpu_utilization",
+				Description: "GPU utilization for pods owned by the Serving Application when DCGM labels are available.",
+				Query:       `avg(DCGM_FI_DEV_GPU_UTIL{namespace="` + namespace + `"})`,
+			},
+			{
+				Name:        "pod_ready",
+				Description: "Ready pod count for the Serving Application namespace.",
+				Query:       `sum(kube_pod_status_ready{namespace="` + namespace + `",condition="true"})`,
+			},
+		},
 	}
 }
 

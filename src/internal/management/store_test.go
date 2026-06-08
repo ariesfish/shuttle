@@ -114,7 +114,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cluster, err := store.CreateCluster(CreateClusterRequest{Name: "h200-a"})
+	cluster, err := store.CreateCluster(CreateClusterRequest{Name: "h200-a", PrometheusURL: "http://prometheus.local", GrafanaURL: "http://grafana.local"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +153,13 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	}
 	if app.Phase != ServingApplicationPhaseDraft {
 		t.Fatalf("unexpected app phase: %+v", app)
+	}
+	observability, err := store.GetObservabilityEntry(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observability.GrafanaURL == "" || observability.PrometheusURL == "" || len(observability.PrometheusQueries) == 0 {
+		t.Fatalf("unexpected observability entry: %+v", observability)
 	}
 
 	task, err := store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: app.ID})

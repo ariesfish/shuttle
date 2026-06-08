@@ -409,7 +409,7 @@ Phase 1 prioritizes the Management Plane and Cluster Agent control loop.
 - Task completion now updates Serving Application phase for preview, apply, redeploy, and retire; richer transition history is still pending.
 - Management API uses JSON-file persistence, not Postgres.
 - Authentication, RBAC, audit, and Web Console are not implemented yet.
-- Endpoint Registry is implemented for cluster-local service URLs; Prometheus/Grafana summary integration is not implemented yet.
+- Endpoint Registry is implemented for cluster-local service URLs; Observability Entry returns Grafana deep links and Prometheus query templates, but does not query Prometheus yet.
 
 ## Implementation Phases
 
@@ -497,7 +497,7 @@ Deliverables:
 1. Replace JSON-file persistence with Postgres-backed repositories.
 2. Add authentication, Project RBAC, and audit records.
 3. Add exact resource-name fallback cleanup when label-based delete-before-apply cleanup is insufficient.
-4. Add selected Prometheus summary queries and Grafana deep links.
+4. Add optional Prometheus query execution for selected summary metrics.
 5. Add Web Console minimal pages after API and Agent control loop stabilize.
 6. Replace generated service DNS defaults with discovered external cluster-local endpoint URLs when ingress/gateway details are available.
 

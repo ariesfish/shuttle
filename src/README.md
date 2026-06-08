@@ -32,7 +32,7 @@ curl -s localhost:8080/v1/projects \
 
 curl -s localhost:8080/v1/clusters \
   -H 'Content-Type: application/json' \
-  -d '{"name":"h200-a"}'
+  -d '{"name":"h200-a","prometheusUrl":"http://prometheus.local","grafanaUrl":"http://grafana.local"}'
 
 curl -s localhost:8080/v1/agents/register \
   -H 'Content-Type: application/json' \
@@ -93,12 +93,13 @@ curl -s -X POST localhost:8080/v1/serving-applications/app-5/retire-task
 
 For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeployment` and waits for it to disappear.
 
-List registered endpoints:
+List registered endpoints and observability entry points:
 
 ```bash
 curl -s localhost:8080/v1/endpoints
+curl -s localhost:8080/v1/serving-applications/app-5/observability
 ```
 
-Apply/redeploy task completion creates or updates the endpoint registry entry. Retire task completion removes it.
+Apply/redeploy task completion creates or updates the endpoint registry entry. Retire task completion removes it. Observability entries return Grafana deep links and Prometheus query templates; the Management Plane does not ingest raw metrics.
 
 IDs are generated sequentially in the JSON data file.

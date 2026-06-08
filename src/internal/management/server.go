@@ -40,6 +40,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/apply-task", s.createApplyTask)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/redeploy-task", s.createRedeployTask)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/retire-task", s.createRetireTask)
+	mux.HandleFunc("GET /v1/serving-applications/{appID}/observability", s.getObservabilityEntry)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
 	mux.HandleFunc("POST /v1/tasks", s.createTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
@@ -149,6 +150,11 @@ func (s *Server) createRedeployTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createRetireTask(w http.ResponseWriter, r *http.Request) {
 	task, err := s.store.CreateRetireTask(CreateRetireTaskRequest{ServingApplicationID: r.PathValue("appID")})
 	writeResult(w, task, http.StatusCreated, err)
+}
+
+func (s *Server) getObservabilityEntry(w http.ResponseWriter, r *http.Request) {
+	entry, err := s.store.GetObservabilityEntry(r.PathValue("appID"))
+	writeResult(w, entry, http.StatusOK, err)
 }
 
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {

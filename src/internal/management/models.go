@@ -10,11 +10,13 @@ type Project struct {
 }
 
 type InferenceCluster struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description,omitempty"`
+	PrometheusURL string    `json:"prometheusUrl,omitempty"`
+	GrafanaURL    string    `json:"grafanaUrl,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type ClusterAgent struct {
@@ -106,6 +108,21 @@ type OptimizationIntent struct {
 	ProfilingMode string   `json:"profilingMode"`
 }
 
+type ObservabilityEntry struct {
+	ServingApplicationID string            `json:"servingApplicationId"`
+	ClusterID            string            `json:"clusterId"`
+	Namespace            string            `json:"namespace"`
+	GrafanaURL           string            `json:"grafanaUrl,omitempty"`
+	PrometheusURL        string            `json:"prometheusUrl,omitempty"`
+	PrometheusQueries    []PrometheusQuery `json:"prometheusQueries"`
+}
+
+type PrometheusQuery struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Query       string `json:"query"`
+}
+
 type EndpointRegistryEntry struct {
 	ID                   string    `json:"id"`
 	ServingApplicationID string    `json:"servingApplicationId"`
@@ -160,8 +177,10 @@ type CreateProjectRequest struct {
 }
 
 type CreateClusterRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	PrometheusURL string `json:"prometheusUrl,omitempty"`
+	GrafanaURL    string `json:"grafanaUrl,omitempty"`
 }
 
 type RegisterAgentRequest struct {
