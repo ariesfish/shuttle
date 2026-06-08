@@ -13,20 +13,12 @@ var (
 	ErrInvalidResult   = errors.New("invalid task result")
 )
 
-type Type string
-
-const (
-	TypePreviewDeploymentDiff Type = "PreviewDeploymentDiff"
-	TypeApplyDeployment       Type = "ApplyDeployment"
-	TypeDeleteBeforeApply     Type = "DeleteBeforeApplyRedeploy"
-	TypeRetireDeployment      Type = "RetireDeployment"
-	TypeFetchDiagnostics      Type = "FetchDiagnostics"
-)
+type TaskType string
 
 type DTO struct {
 	ID        string
 	ClusterID string
-	Type      Type
+	Type      TaskType
 	Payload   map[string]any
 	Result    map[string]any
 	Error     string
@@ -34,7 +26,7 @@ type DTO struct {
 
 type Envelope struct {
 	ClusterID string
-	Type      Type
+	Type      TaskType
 	Payload   Payload
 }
 
@@ -55,7 +47,7 @@ type EndpointIntent struct {
 }
 
 type RenderedDeploymentTaskInput struct {
-	Type                 Type
+	Type                 TaskType
 	ServingApplicationID string
 	ClusterID            string
 	Resource             ResourceRef
@@ -64,27 +56,27 @@ type RenderedDeploymentTaskInput struct {
 }
 
 type ResourceTaskInput struct {
-	Type                 Type
+	Type                 TaskType
 	ServingApplicationID string
 	ClusterID            string
 	Resource             ResourceRef
 }
 
 type Payload interface {
-	TaskType() Type
+	TaskType() TaskType
 	ServingApplicationID() string
 	Resource() ResourceRef
 }
 
 type RenderedDeploymentPayload struct {
-	TypeValue                 Type
+	TypeValue                 TaskType
 	ServingApplicationIDValue string
 	ResourceValue             ResourceRef
 	EndpointValue             EndpointIntent
 	ManifestValues            []Manifest
 }
 
-func (p RenderedDeploymentPayload) TaskType() Type               { return p.TypeValue }
+func (p RenderedDeploymentPayload) TaskType() TaskType           { return p.TypeValue }
 func (p RenderedDeploymentPayload) ServingApplicationID() string { return p.ServingApplicationIDValue }
 func (p RenderedDeploymentPayload) Resource() ResourceRef        { return p.ResourceValue }
 func (p RenderedDeploymentPayload) Endpoint() EndpointIntent     { return p.EndpointValue }
@@ -93,17 +85,17 @@ func (p RenderedDeploymentPayload) Manifests() []Manifest {
 }
 
 type ResourcePayload struct {
-	TypeValue                 Type
+	TypeValue                 TaskType
 	ServingApplicationIDValue string
 	ResourceValue             ResourceRef
 }
 
-func (p ResourcePayload) TaskType() Type               { return p.TypeValue }
+func (p ResourcePayload) TaskType() TaskType           { return p.TypeValue }
 func (p ResourcePayload) ServingApplicationID() string { return p.ServingApplicationIDValue }
 func (p ResourcePayload) Resource() ResourceRef        { return p.ResourceValue }
 
 type Result interface {
-	TaskType() Type
+	TaskType() TaskType
 }
 
 type PreviewResult struct {
@@ -113,10 +105,10 @@ type PreviewResult struct {
 	HandledAt     time.Time
 }
 
-func (r PreviewResult) TaskType() Type { return TypePreviewDeploymentDiff }
+func (r PreviewResult) TaskType() TaskType { return TaskTypePreviewDeploymentDiff }
 
 type DeploymentResult struct {
-	TypeValue          Type
+	TypeValue          TaskType
 	ManifestCount      int
 	Stdout             string
 	Stderr             string
@@ -129,7 +121,7 @@ type DeploymentResult struct {
 	HandledAt          time.Time
 }
 
-func (r DeploymentResult) TaskType() Type { return r.TypeValue }
+func (r DeploymentResult) TaskType() TaskType { return r.TypeValue }
 
 type RetireResult struct {
 	Resource  ResourceRef
@@ -138,7 +130,7 @@ type RetireResult struct {
 	HandledAt time.Time
 }
 
-func (r RetireResult) TaskType() Type { return TypeRetireDeployment }
+func (r RetireResult) TaskType() TaskType { return TaskTypeRetireDeployment }
 
 type DiagnosticsSection struct {
 	Name   string
@@ -152,10 +144,10 @@ type DiagnosticsResult struct {
 	HandledAt time.Time
 }
 
-func (r DiagnosticsResult) TaskType() Type { return TypeFetchDiagnostics }
+func (r DiagnosticsResult) TaskType() TaskType { return TaskTypeFetchDiagnostics }
 
 func BuildRenderedDeploymentTask(input RenderedDeploymentTaskInput) (Envelope, error) {
-	if input.Type != TypePreviewDeploymentDiff && input.Type != TypeApplyDeployment && input.Type != TypeDeleteBeforeApply {
+	if PayloadKindFor(input.Type) != PayloadKindRenderedDeployment {
 		return Envelope{}, fmt.Errorf("%w: %s", ErrUnsupportedType, input.Type)
 	}
 	if strings.TrimSpace(input.ServingApplicationID) == "" || strings.TrimSpace(input.ClusterID) == "" {
@@ -180,7 +172,7 @@ func BuildRenderedDeploymentTask(input RenderedDeploymentTaskInput) (Envelope, e
 }
 
 func BuildResourceTask(input ResourceTaskInput) (Envelope, error) {
-	if input.Type != TypeRetireDeployment && input.Type != TypeFetchDiagnostics {
+	if PayloadKindFor(input.Type) != PayloadKindResource {
 		return Envelope{}, fmt.Errorf("%w: %s", ErrUnsupportedType, input.Type)
 	}
 	if strings.TrimSpace(input.ServingApplicationID) == "" || strings.TrimSpace(input.ClusterID) == "" {
@@ -195,8 +187,8 @@ func BuildResourceTask(input ResourceTaskInput) (Envelope, error) {
 }
 
 func DecodePayload(dto DTO) (Payload, error) {
-	switch dto.Type {
-	case TypePreviewDeploymentDiff, TypeApplyDeployment, TypeDeleteBeforeApply:
+	switch PayloadKindFor(dto.Type) {
+	case PayloadKindRenderedDeployment:
 		appID, _ := dto.Payload["servingApplicationId"].(string)
 		if strings.TrimSpace(appID) == "" {
 			return nil, fmt.Errorf("%w: servingApplicationId is required", ErrInvalidPayload)
@@ -221,7 +213,7 @@ func DecodePayload(dto DTO) (Payload, error) {
 			ManifestValues: manifests,
 		}
 		return payload, nil
-	case TypeRetireDeployment, TypeFetchDiagnostics:
+	case PayloadKindResource:
 		appID, _ := dto.Payload["servingApplicationId"].(string)
 		if strings.TrimSpace(appID) == "" {
 			return nil, fmt.Errorf("%w: servingApplicationId is required", ErrInvalidPayload)
@@ -238,10 +230,11 @@ func DecodePayload(dto DTO) (Payload, error) {
 }
 
 func DecodeResult(dto DTO) (Result, error) {
-	switch dto.Type {
-	case TypePreviewDeploymentDiff:
-		return PreviewResult{ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), HandledAt: parseHandledAt(dto.Result)}, nil
-	case TypeApplyDeployment, TypeDeleteBeforeApply:
+	switch PayloadKindFor(dto.Type) {
+	case PayloadKindRenderedDeployment:
+		if dto.Type == TaskTypePreviewDeploymentDiff {
+			return PreviewResult{ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), HandledAt: parseHandledAt(dto.Result)}, nil
+		}
 		resource, err := resourceFromMap(dto.Result)
 		if err != nil {
 			resource, err = resourceFromMap(dto.Payload)
@@ -250,24 +243,18 @@ func DecodeResult(dto DTO) (Result, error) {
 			}
 		}
 		return DeploymentResult{TypeValue: dto.Type, ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), Resource: resource, EndpointURL: stringField(dto.Result, "endpointUrl"), Phase: stringField(dto.Result, "phase"), Message: stringField(dto.Result, "message"), DeletedBeforeApply: boolField(dto.Result, "deletedBeforeApply"), DeleteMessage: stringField(dto.Result, "deleteMessage"), HandledAt: parseHandledAt(dto.Result)}, nil
-	case TypeRetireDeployment:
+	case PayloadKindResource:
 		resource, err := resourceFromMap(dto.Result)
 		if err != nil {
 			resource, err = resourceFromMap(dto.Payload)
 			if err != nil {
 				return nil, err
 			}
+		}
+		if dto.Type == TaskTypeFetchDiagnostics {
+			return DiagnosticsResult{Resource: resource, Sections: sectionsFromMap(dto.Result), HandledAt: parseHandledAt(dto.Result)}, nil
 		}
 		return RetireResult{Resource: resource, Deleted: boolField(dto.Result, "deleted"), Message: stringField(dto.Result, "message"), HandledAt: parseHandledAt(dto.Result)}, nil
-	case TypeFetchDiagnostics:
-		resource, err := resourceFromMap(dto.Result)
-		if err != nil {
-			resource, err = resourceFromMap(dto.Payload)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return DiagnosticsResult{Resource: resource, Sections: sectionsFromMap(dto.Result), HandledAt: parseHandledAt(dto.Result)}, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, dto.Type)
 	}
@@ -299,7 +286,7 @@ func EncodeResult(result Result) map[string]any {
 		return withHandledAt(map[string]any{"mode": "server-side-dry-run", "manifestCount": value.ManifestCount, "stdout": value.Stdout, "stderr": value.Stderr}, value.HandledAt)
 	case DeploymentResult:
 		output := map[string]any{"mode": deploymentMode(value.TypeValue), "manifestCount": value.ManifestCount, "stdout": value.Stdout, "stderr": value.Stderr, "resource": value.Resource.Name, "namespace": value.Resource.Namespace, "endpointUrl": value.EndpointURL, "phase": value.Phase, "message": value.Message}
-		if value.TypeValue == TypeDeleteBeforeApply {
+		if value.TypeValue == TaskTypeDeleteBeforeApply {
 			output["deletedBeforeApply"] = value.DeletedBeforeApply
 			output["deleteMessage"] = value.DeleteMessage
 		}
@@ -440,8 +427,8 @@ func withHandledAt(values map[string]any, handledAt time.Time) map[string]any {
 	return values
 }
 
-func deploymentMode(taskType Type) string {
-	if taskType == TypeDeleteBeforeApply {
+func deploymentMode(taskType TaskType) string {
+	if taskType == TaskTypeDeleteBeforeApply {
 		return "delete-before-apply"
 	}
 	return "apply-and-watch"

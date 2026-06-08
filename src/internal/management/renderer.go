@@ -21,6 +21,14 @@ func RenderKnownTemplate(app ServingApplication, artifact ModelArtifact) (Render
 	return RenderRecipeTemplate(recipe, app, artifact)
 }
 
+type TemplateBindings struct {
+	ResourceName  string
+	Namespace     string
+	ModelName     string
+	ModelPath     string
+	HostCachePath string
+}
+
 func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact ModelArtifact) (RenderedManifest, error) {
 	if recipe.Spec.Template.Renderer != "string-replacement-v1" {
 		return RenderedManifest{}, fmt.Errorf("%w: unsupported recipe renderer", ErrInvalidInput)
@@ -36,30 +44,61 @@ func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact
 	if err != nil {
 		return RenderedManifest{}, err
 	}
-	modelName := servedModelName(artifact)
+	bindings := NewTemplateBindings(app, artifact)
+	content = renderStringReplacementV1(content, bindings)
+
+	return RenderedManifest{Name: bindings.ResourceName + ".yaml", Content: content}, nil
+}
+
+func NewTemplateBindings(app ServingApplication, artifact ModelArtifact) TemplateBindings {
 	modelPath := strings.TrimRight(artifact.PVCMountPath, "/") + "/" + strings.TrimLeft(artifact.PVCModelPath, "/")
-	hostCachePath := artifact.HostCachePath
-	if strings.TrimSpace(hostCachePath) == "" {
+	hostCachePath := strings.TrimSpace(artifact.HostCachePath)
+	if hostCachePath == "" {
 		hostCachePath = "/data/cache/hub"
 	}
 	resourceName := kubernetesName(app.Name)
 	if resourceName == "" {
 		resourceName = kubernetesName(app.ID)
 	}
-
-	replacements := map[string]string{
-		"name: " + templateResourceName(content):                  "name: " + resourceName,
-		"namespace: dynamo-system":                                "namespace: " + app.Placement.Namespace,
-		"inference.zhiliu.dev/serving-application: dsv4-template": "inference.zhiliu.dev/serving-application: " + resourceName,
-		"deepseek-ai/DeepSeek-V4-Flash":                           modelName,
-		"/home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136": modelPath,
-		"path: \"/data/cache/hub\"": "path: \"" + hostCachePath + "\"",
+	return TemplateBindings{
+		ResourceName:  resourceName,
+		Namespace:     strings.TrimSpace(app.Placement.Namespace),
+		ModelName:     servedModelName(artifact),
+		ModelPath:     modelPath,
+		HostCachePath: hostCachePath,
 	}
-	for oldText, newText := range replacements {
+}
+
+func renderStringReplacementV1(content string, bindings TemplateBindings) string {
+	// Prefer explicit variables in new templates. Keep literal replacements so
+	// existing Git-managed Serving Recipes continue to render without mutating
+	// historical deployment examples.
+	explicit := map[string]string{
+		"{{ .ResourceName }}":  bindings.ResourceName,
+		"{{ .Namespace }}":     bindings.Namespace,
+		"{{ .ModelName }}":     bindings.ModelName,
+		"{{ .ModelPath }}":     bindings.ModelPath,
+		"{{ .HostCachePath }}": bindings.HostCachePath,
+	}
+	for oldText, newText := range explicit {
 		content = strings.ReplaceAll(content, oldText, newText)
 	}
 
-	return RenderedManifest{Name: resourceName + ".yaml", Content: content}, nil
+	legacy := map[string]string{
+		"name: " + templateResourceName(content):                  "name: " + bindings.ResourceName,
+		"namespace: dynamo-system":                                "namespace: " + bindings.Namespace,
+		"inference.zhiliu.dev/serving-application: dsv4-template": "inference.zhiliu.dev/serving-application: " + bindings.ResourceName,
+		"deepseek-ai/DeepSeek-V4-Flash":                           bindings.ModelName,
+		"/home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136": bindings.ModelPath,
+		"path: \"/data/cache/hub\"": "path: \"" + bindings.HostCachePath + "\"",
+	}
+	for oldText, newText := range legacy {
+		if strings.TrimSpace(oldText) == "name:" {
+			continue
+		}
+		content = strings.ReplaceAll(content, oldText, newText)
+	}
+	return content
 }
 
 func templateResourceName(content string) string {

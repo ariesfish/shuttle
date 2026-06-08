@@ -8,11 +8,11 @@ import (
 
 func TestServingApplicationControlLoopPlansApplyTask(t *testing.T) {
 	app := controlLoopTestApp()
-	plan, err := (ServingApplicationControlLoop{}).PlanRenderedTask(app, TaskTypeApplyDeployment, RenderedDeploymentManifest{Name: "dgd.yaml", Content: "kind: DynamoGraphDeployment\n"})
+	plan, err := (ServingApplicationControlLoop{}).PlanRenderedTask(app, platformtask.TaskTypeApplyDeployment, RenderedDeploymentManifest{Name: "dgd.yaml", Content: "kind: DynamoGraphDeployment\n"})
 	if err != nil {
 		t.Fatalf("plan rendered task: %v", err)
 	}
-	if plan.ClusterID != app.Placement.ClusterID || plan.Type != TaskTypeApplyDeployment {
+	if plan.ClusterID != app.Placement.ClusterID || plan.Type != platformtask.TaskTypeApplyDeployment {
 		t.Fatalf("unexpected task plan: %+v", plan)
 	}
 	if plan.TransitionPhase != ServingApplicationPhaseApplying || plan.TransitionReason != "apply task created" {
@@ -27,7 +27,7 @@ func TestServingApplicationControlLoopPlansApplyTask(t *testing.T) {
 func TestServingApplicationControlLoopCompletesDeploymentTask(t *testing.T) {
 	app := controlLoopTestApp()
 	control := ServingApplicationControlLoop{}
-	plan, err := control.PlanRenderedTask(app, TaskTypeApplyDeployment, RenderedDeploymentManifest{Name: "dgd.yaml", Content: "kind: DynamoGraphDeployment\n"})
+	plan, err := control.PlanRenderedTask(app, platformtask.TaskTypeApplyDeployment, RenderedDeploymentManifest{Name: "dgd.yaml", Content: "kind: DynamoGraphDeployment\n"})
 	if err != nil {
 		t.Fatalf("plan rendered task: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestServingApplicationControlLoopCompletesDeploymentTask(t *testing.T) {
 		Payload:   platformtask.EncodePayload(plan.Payload),
 		Status:    TaskStatusSucceeded,
 		Result: platformtask.EncodeResult(platformtask.DeploymentResult{
-			TypeValue:   platformtask.TypeApplyDeployment,
+			TypeValue:   platformtask.TaskTypeApplyDeployment,
 			Resource:    platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
 			EndpointURL: "http://deepseek-v4-flash.dynamo-system.svc.cluster.local:8000/v1",
 			Phase:       "Ready",
@@ -57,7 +57,7 @@ func TestServingApplicationControlLoopCompletesDeploymentTask(t *testing.T) {
 func TestServingApplicationControlLoopCompletesRetireTask(t *testing.T) {
 	app := controlLoopTestApp()
 	control := ServingApplicationControlLoop{}
-	plan, err := control.PlanResourceTask(app, TaskTypeRetireDeployment, "deepseek-v4-flash")
+	plan, err := control.PlanResourceTask(app, platformtask.TaskTypeRetireDeployment, "deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("plan retire task: %v", err)
 	}

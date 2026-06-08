@@ -1,6 +1,10 @@
 package management
 
-import "time"
+import (
+	"time"
+
+	platformtask "zhiliu/internal/task"
+)
 
 type Project struct {
 	ID        string    `json:"id"`
@@ -181,32 +185,18 @@ const (
 	TaskStatusFailed    TaskStatus = "failed"
 )
 
-type TaskType string
-
-const (
-	TaskTypeRegisterCluster       TaskType = "RegisterCluster"
-	TaskTypeValidateIntent        TaskType = "ValidateIntent"
-	TaskTypePreviewDeploymentDiff TaskType = "PreviewDeploymentDiff"
-	TaskTypeApplyDeployment       TaskType = "ApplyDeployment"
-	TaskTypeDeleteBeforeApply     TaskType = "DeleteBeforeApplyRedeploy"
-	TaskTypeInspectStatus         TaskType = "InspectDeploymentStatus"
-	TaskTypeRetireDeployment      TaskType = "RetireDeployment"
-	TaskTypeFetchDiagnostics      TaskType = "FetchDiagnostics"
-	TaskTypeSyncEndpointReadiness TaskType = "SyncEndpointReadiness"
-)
-
 type Task struct {
-	ID             string         `json:"id"`
-	ClusterID      string         `json:"clusterId"`
-	Type           TaskType       `json:"type"`
-	Status         TaskStatus     `json:"status"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	LeaseOwner     string         `json:"leaseOwner,omitempty"`
-	LeaseExpiresAt time.Time      `json:"leaseExpiresAt,omitempty"`
-	Result         map[string]any `json:"result,omitempty"`
-	Error          string         `json:"error,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	ID             string                `json:"id"`
+	ClusterID      string                `json:"clusterId"`
+	Type           platformtask.TaskType `json:"type"`
+	Status         TaskStatus            `json:"status"`
+	Payload        map[string]any        `json:"payload,omitempty"`
+	LeaseOwner     string                `json:"leaseOwner,omitempty"`
+	LeaseExpiresAt time.Time             `json:"leaseExpiresAt,omitempty"`
+	Result         map[string]any        `json:"result,omitempty"`
+	Error          string                `json:"error,omitempty"`
+	CreatedAt      time.Time             `json:"createdAt"`
+	UpdatedAt      time.Time             `json:"updatedAt"`
 }
 
 type CreateProjectRequest struct {
@@ -253,9 +243,9 @@ type CreateServingApplicationRequest struct {
 }
 
 type CreateTaskRequest struct {
-	ClusterID string         `json:"clusterId"`
-	Type      TaskType       `json:"type"`
-	Payload   map[string]any `json:"payload,omitempty"`
+	ClusterID string                `json:"clusterId"`
+	Type      platformtask.TaskType `json:"type"`
+	Payload   map[string]any        `json:"payload,omitempty"`
 }
 
 type CreatePreviewTaskRequest struct {

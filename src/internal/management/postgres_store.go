@@ -15,7 +15,14 @@ type PostgresOptions struct {
 	DSN string
 }
 
+// NewPostgresStore keeps the Phase 1 Store Interface backed by a single JSON
+// state document in Postgres. It is not a relational Store Adapter; use the
+// explicit name below when adding new callers so the seam is not misleading.
 func NewPostgresStore(ctx context.Context, options PostgresOptions) (*FileStore, error) {
+	return NewPostgresJSONStateStore(ctx, options)
+}
+
+func NewPostgresJSONStateStore(ctx context.Context, options PostgresOptions) (*FileStore, error) {
 	db, err := sql.Open("pgx", options.DSN)
 	if err != nil {
 		return nil, err

@@ -7,7 +7,7 @@ import (
 
 func TestBuildRenderedDeploymentTaskEncodesPayload(t *testing.T) {
 	envelope, err := BuildRenderedDeploymentTask(RenderedDeploymentTaskInput{
-		Type:                 TypeApplyDeployment,
+		Type:                 TaskTypeApplyDeployment,
 		ServingApplicationID: "app-1",
 		ClusterID:            "cluster-1",
 		Resource:             ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -17,7 +17,7 @@ func TestBuildRenderedDeploymentTaskEncodesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build rendered deployment task: %v", err)
 	}
-	if envelope.ClusterID != "cluster-1" || envelope.Type != TypeApplyDeployment {
+	if envelope.ClusterID != "cluster-1" || envelope.Type != TaskTypeApplyDeployment {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	payload := EncodePayload(envelope.Payload)
@@ -32,7 +32,7 @@ func TestBuildRenderedDeploymentTaskEncodesPayload(t *testing.T) {
 
 func TestBuildRenderedDeploymentTaskRejectsUnsafeShape(t *testing.T) {
 	_, err := BuildRenderedDeploymentTask(RenderedDeploymentTaskInput{
-		Type:                 TypeApplyDeployment,
+		Type:                 TaskTypeApplyDeployment,
 		ServingApplicationID: "app-1",
 		ClusterID:            "cluster-1",
 		Resource:             ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -42,7 +42,7 @@ func TestBuildRenderedDeploymentTaskRejectsUnsafeShape(t *testing.T) {
 	}
 
 	_, err = BuildRenderedDeploymentTask(RenderedDeploymentTaskInput{
-		Type:                 Type("ArbitraryKubectl"),
+		Type:                 TaskType("ArbitraryKubectl"),
 		ServingApplicationID: "app-1",
 		ClusterID:            "cluster-1",
 		Resource:             ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -55,7 +55,7 @@ func TestBuildRenderedDeploymentTaskRejectsUnsafeShape(t *testing.T) {
 
 func TestDecodePayloadRequiresServingApplicationIdentity(t *testing.T) {
 	_, err := DecodePayload(DTO{
-		Type: TypePreviewDeploymentDiff,
+		Type: TaskTypePreviewDeploymentDiff,
 		Payload: map[string]any{
 			"resourceName": "deepseek-v4-flash",
 			"namespace":    "dynamo-system",
@@ -69,7 +69,7 @@ func TestDecodePayloadRequiresServingApplicationIdentity(t *testing.T) {
 
 func TestDecodeResultFallsBackToPayloadResource(t *testing.T) {
 	result, err := DecodeResult(DTO{
-		Type: TypeApplyDeployment,
+		Type: TaskTypeApplyDeployment,
 		Payload: map[string]any{
 			"servingApplicationId": "app-1",
 			"resourceName":         "deepseek-v4-flash",

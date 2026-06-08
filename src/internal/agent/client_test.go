@@ -14,7 +14,7 @@ import (
 func previewTaskPayload(t *testing.T, clusterID string) map[string]any {
 	t.Helper()
 	envelope, err := platformtask.BuildRenderedDeploymentTask(platformtask.RenderedDeploymentTaskInput{
-		Type:                 platformtask.TypePreviewDeploymentDiff,
+		Type:                 platformtask.TaskTypePreviewDeploymentDiff,
 		ServingApplicationID: "app-1",
 		ClusterID:            clusterID,
 		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -37,7 +37,7 @@ func TestClientRegistersLeasesAndCompletesNoopTask(t *testing.T) {
 	}
 	createdTask, err := store.CreateTask(management.CreateTaskRequest{
 		ClusterID: cluster.ID,
-		Type:      management.TaskTypeInspectStatus,
+		Type:      platformtask.TaskTypeInspectStatus,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestClientRenewsTaskLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdTask, err := store.CreateTask(management.CreateTaskRequest{ClusterID: cluster.ID, Type: management.TaskTypeInspectStatus})
+	createdTask, err := store.CreateTask(management.CreateTaskRequest{ClusterID: cluster.ID, Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestRunnerCompletesNoopTask(t *testing.T) {
 	}
 	createdTask, err := store.CreateTask(management.CreateTaskRequest{
 		ClusterID: cluster.ID,
-		Type:      management.TaskTypeInspectStatus,
+		Type:      platformtask.TaskTypeInspectStatus,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestRunnerRenewsLeaseWhileTaskRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdTask, err := store.CreateTask(management.CreateTaskRequest{ClusterID: cluster.ID, Type: management.TaskTypeInspectStatus})
+	createdTask, err := store.CreateTask(management.CreateTaskRequest{ClusterID: cluster.ID, Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestRunnerCompletesPreviewDeploymentDiffTask(t *testing.T) {
 	}
 	createdTask, err := store.CreateTask(management.CreateTaskRequest{
 		ClusterID: cluster.ID,
-		Type:      management.TaskTypePreviewDeploymentDiff,
+		Type:      platformtask.TaskTypePreviewDeploymentDiff,
 		Payload:   previewTaskPayload(t, cluster.ID),
 	})
 	if err != nil {

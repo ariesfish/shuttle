@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	platformtask "zhiliu/internal/task"
 )
 
 func TestProjectClusterAgentAndTaskLifecycle(t *testing.T) {
@@ -42,7 +44,7 @@ func TestProjectClusterAgentAndTaskLifecycle(t *testing.T) {
 
 	task, err := store.CreateTask(CreateTaskRequest{
 		ClusterID: cluster.ID,
-		Type:      TaskTypeInspectStatus,
+		Type:      platformtask.TaskTypeInspectStatus,
 		Payload: map[string]any{
 			"servingApplicationId": "sa-1",
 		},
@@ -90,7 +92,7 @@ func TestRenewTaskLeaseExtendsOwnedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: TaskTypeInspectStatus})
+	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +123,7 @@ func TestCompleteTaskIsIdempotentAfterTerminalState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: TaskTypeInspectStatus})
+	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +166,7 @@ func TestLeaseRejectsAgentFromAnotherCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.CreateTask(CreateTaskRequest{ClusterID: clusterA.ID, Type: TaskTypeInspectStatus})
+	_, err = store.CreateTask(CreateTaskRequest{ClusterID: clusterA.ID, Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +238,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Type != TaskTypePreviewDeploymentDiff || task.ClusterID != cluster.ID {
+	if task.Type != platformtask.TaskTypePreviewDeploymentDiff || task.ClusterID != cluster.ID {
 		t.Fatalf("unexpected preview task: %+v", task)
 	}
 	manifests, ok := task.Payload["manifests"].([]any)
@@ -248,7 +250,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applyTask.Type != TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash" || applyTask.Payload["namespace"] != "tenant-a" {
+	if applyTask.Type != platformtask.TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash" || applyTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected apply task: %+v", applyTask)
 	}
 	transitions, err := store.ListServingApplicationTransitions(app.ID)
@@ -270,7 +272,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if redeployTask.Type != TaskTypeDeleteBeforeApply || redeployTask.Payload["resourceName"] != "deepseek-v4-flash" {
+	if redeployTask.Type != platformtask.TaskTypeDeleteBeforeApply || redeployTask.Payload["resourceName"] != "deepseek-v4-flash" {
 		t.Fatalf("unexpected redeploy task: %+v", redeployTask)
 	}
 
@@ -278,14 +280,14 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retireTask.Type != TaskTypeRetireDeployment || retireTask.Payload["namespace"] != "tenant-a" {
+	if retireTask.Type != platformtask.TaskTypeRetireDeployment || retireTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected retire task: %+v", retireTask)
 	}
 	diagnosticsTask, err := store.CreateDiagnosticsTask(CreateDiagnosticsTaskRequest{ServingApplicationID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diagnosticsTask.Type != TaskTypeFetchDiagnostics || diagnosticsTask.Payload["resourceName"] != "deepseek-v4-flash" || diagnosticsTask.Payload["namespace"] != "tenant-a" {
+	if diagnosticsTask.Type != platformtask.TaskTypeFetchDiagnostics || diagnosticsTask.Payload["resourceName"] != "deepseek-v4-flash" || diagnosticsTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected diagnostics task: %+v", diagnosticsTask)
 	}
 	retiringApp, err := store.GetServingApplication(app.ID)
@@ -441,7 +443,7 @@ func TestCreateServingApplicationWithSGLangRecipeCreatesRenderedTasks(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applyTask.Type != TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash-sglang" || applyTask.Payload["endpointName"] != "deepseek-v4-flash-sglang" {
+	if applyTask.Type != platformtask.TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash-sglang" || applyTask.Payload["endpointName"] != "deepseek-v4-flash-sglang" {
 		t.Fatalf("unexpected apply task: %+v", applyTask)
 	}
 	assertRenderedTaskManifestContains(t, applyTask, "deepseek-v4-flash-sglang", "/models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1")
@@ -497,7 +499,7 @@ func TestTaskTypeWhitelist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: TaskType("ArbitraryKubectl")})
+	_, err = store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: platformtask.TaskType("ArbitraryKubectl")})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}

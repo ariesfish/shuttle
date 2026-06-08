@@ -10,10 +10,10 @@ import (
 	platformtask "zhiliu/internal/task"
 )
 
-func renderedTaskPayload(t *testing.T, taskType management.TaskType) map[string]any {
+func renderedTaskPayload(t *testing.T, taskType platformtask.TaskType) map[string]any {
 	t.Helper()
 	envelope, err := platformtask.BuildRenderedDeploymentTask(platformtask.RenderedDeploymentTaskInput{
-		Type:                 platformtask.Type(taskType),
+		Type:                 platformtask.TaskType(taskType),
 		ServingApplicationID: "app-1",
 		ClusterID:            "cluster-1",
 		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -26,10 +26,10 @@ func renderedTaskPayload(t *testing.T, taskType management.TaskType) map[string]
 	return platformtask.EncodePayload(envelope.Payload)
 }
 
-func resourceTaskPayload(t *testing.T, taskType management.TaskType) map[string]any {
+func resourceTaskPayload(t *testing.T, taskType platformtask.TaskType) map[string]any {
 	t.Helper()
 	envelope, err := platformtask.BuildResourceTask(platformtask.ResourceTaskInput{
-		Type:                 platformtask.Type(taskType),
+		Type:                 platformtask.TaskType(taskType),
 		ServingApplicationID: "app-1",
 		ClusterID:            "cluster-1",
 		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
@@ -45,8 +45,8 @@ func TestTaskExecutorPreviewDeploymentDiff(t *testing.T) {
 	executor := NewTaskExecutor(dryRunner)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypePreviewDeploymentDiff,
-		Payload: renderedTaskPayload(t, management.TaskTypePreviewDeploymentDiff),
+		Type:    platformtask.TaskTypePreviewDeploymentDiff,
+		Payload: renderedTaskPayload(t, platformtask.TaskTypePreviewDeploymentDiff),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -65,8 +65,8 @@ func TestTaskExecutorApplyDeployment(t *testing.T) {
 	executor := NewTaskExecutorWithApply(&fakeDryRunner{}, applier, watcher)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypeApplyDeployment,
-		Payload: renderedTaskPayload(t, management.TaskTypeApplyDeployment),
+		Type:    platformtask.TaskTypeApplyDeployment,
+		Payload: renderedTaskPayload(t, platformtask.TaskTypeApplyDeployment),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -89,8 +89,8 @@ func TestTaskExecutorDeleteBeforeApply(t *testing.T) {
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, applier, watcher, deleter)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypeDeleteBeforeApply,
-		Payload: renderedTaskPayload(t, management.TaskTypeDeleteBeforeApply),
+		Type:    platformtask.TaskTypeDeleteBeforeApply,
+		Payload: renderedTaskPayload(t, platformtask.TaskTypeDeleteBeforeApply),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -154,8 +154,8 @@ func TestTaskExecutorFetchDiagnostics(t *testing.T) {
 	executor.diagnostics = &fakeDiagnosticsCollector{result: DiagnosticsResult{Sections: []DiagnosticsSection{{Name: "pods", Output: "pod ok"}}}}
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypeFetchDiagnostics,
-		Payload: resourceTaskPayload(t, management.TaskTypeFetchDiagnostics),
+		Type:    platformtask.TaskTypeFetchDiagnostics,
+		Payload: resourceTaskPayload(t, platformtask.TaskTypeFetchDiagnostics),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -206,8 +206,8 @@ func TestTaskExecutorRetireDeployment(t *testing.T) {
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypeRetireDeployment,
-		Payload: resourceTaskPayload(t, management.TaskTypeRetireDeployment),
+		Type:    platformtask.TaskTypeRetireDeployment,
+		Payload: resourceTaskPayload(t, platformtask.TaskTypeRetireDeployment),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -219,7 +219,7 @@ func TestTaskExecutorRetireDeployment(t *testing.T) {
 
 func TestTaskExecutorPreviewRequiresManifests(t *testing.T) {
 	executor := NewTaskExecutor(&fakeDryRunner{})
-	_, err := executor.Execute(context.Background(), management.Task{Type: management.TaskTypePreviewDeploymentDiff})
+	_, err := executor.Execute(context.Background(), management.Task{Type: platformtask.TaskTypePreviewDeploymentDiff})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -227,7 +227,7 @@ func TestTaskExecutorPreviewRequiresManifests(t *testing.T) {
 
 func TestTaskExecutorNoopForOtherTasks(t *testing.T) {
 	executor := NewTaskExecutor(&fakeDryRunner{})
-	result, err := executor.Execute(context.Background(), management.Task{Type: management.TaskTypeInspectStatus})
+	result, err := executor.Execute(context.Background(), management.Task{Type: platformtask.TaskTypeInspectStatus})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -239,8 +239,8 @@ func TestTaskExecutorNoopForOtherTasks(t *testing.T) {
 func TestTaskExecutorPropagatesDryRunError(t *testing.T) {
 	executor := NewTaskExecutor(&fakeDryRunner{err: errors.New("dry-run failed")})
 	_, err := executor.Execute(context.Background(), management.Task{
-		Type:    management.TaskTypePreviewDeploymentDiff,
-		Payload: renderedTaskPayload(t, management.TaskTypePreviewDeploymentDiff),
+		Type:    platformtask.TaskTypePreviewDeploymentDiff,
+		Payload: renderedTaskPayload(t, platformtask.TaskTypePreviewDeploymentDiff),
 	})
 	if err == nil {
 		t.Fatal("expected error")

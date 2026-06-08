@@ -478,7 +478,7 @@ func (s *FileStore) CreatePreviewTask(req CreatePreviewTaskRequest) (Task, error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, TaskTypePreviewDeploymentDiff)
+	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypePreviewDeploymentDiff)
 	if err != nil {
 		return Task{}, err
 	}
@@ -491,7 +491,7 @@ func (s *FileStore) CreateApplyTask(req CreateApplyTaskRequest) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, TaskTypeApplyDeployment)
+	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypeApplyDeployment)
 	if err != nil {
 		return Task{}, err
 	}
@@ -504,7 +504,7 @@ func (s *FileStore) CreateRedeployTask(req CreateRedeployTaskRequest) (Task, err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, TaskTypeDeleteBeforeApply)
+	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypeDeleteBeforeApply)
 	if err != nil {
 		return Task{}, err
 	}
@@ -521,7 +521,7 @@ func (s *FileStore) CreateRetireTask(req CreateRetireTaskRequest) (Task, error) 
 	if !ok {
 		return Task{}, ErrNotFound
 	}
-	plan, err := ServingApplicationControlLoop{}.PlanResourceTask(app, TaskTypeRetireDeployment, kubernetesName(app.Name))
+	plan, err := ServingApplicationControlLoop{}.PlanRetireTask(app)
 	if err != nil {
 		return Task{}, err
 	}
@@ -539,11 +539,7 @@ func (s *FileStore) CreateDiagnosticsTask(req CreateDiagnosticsTaskRequest) (Tas
 	if !ok {
 		return Task{}, ErrNotFound
 	}
-	resourceName := kubernetesName(app.Name)
-	if resourceName == "" {
-		resourceName = kubernetesName(app.ID)
-	}
-	plan, err := ServingApplicationControlLoop{}.PlanResourceTask(app, TaskTypeFetchDiagnostics, resourceName)
+	plan, err := ServingApplicationControlLoop{}.PlanDiagnosticsTask(app)
 	if err != nil {
 		return Task{}, err
 	}
@@ -597,7 +593,7 @@ func (s *FileStore) applyTaskPlanTransitionLocked(appID string, taskID string, p
 	s.setServingApplicationPhaseLocked(appID, "system", taskID, plan.TransitionPhase, plan.TransitionReason)
 }
 
-func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task, ServingApplicationTaskPlan, error) {
+func (s *FileStore) newRenderedTaskLocked(appID string, taskType platformtask.TaskType) (Task, ServingApplicationTaskPlan, error) {
 	app, ok := s.data.ServingApplications[appID]
 	if !ok {
 		return Task{}, ServingApplicationTaskPlan{}, ErrNotFound
@@ -614,7 +610,19 @@ func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task
 	if err != nil {
 		return Task{}, ServingApplicationTaskPlan{}, err
 	}
-	plan, err := ServingApplicationControlLoop{}.PlanRenderedTask(app, taskType, RenderedDeploymentManifest{Name: manifest.Name, Content: manifest.Content})
+	control := ServingApplicationControlLoop{}
+	renderedManifest := RenderedDeploymentManifest{Name: manifest.Name, Content: manifest.Content}
+	var plan ServingApplicationTaskPlan
+	switch taskType {
+	case platformtask.TaskTypePreviewDeploymentDiff:
+		plan, err = control.PlanPreviewTask(app, renderedManifest)
+	case platformtask.TaskTypeApplyDeployment:
+		plan, err = control.PlanApplyTask(app, renderedManifest)
+	case platformtask.TaskTypeDeleteBeforeApply:
+		plan, err = control.PlanRedeployTask(app, renderedManifest)
+	default:
+		err = fmt.Errorf("%w: unsupported rendered task type", ErrInvalidInput)
+	}
 	if err != nil {
 		return Task{}, ServingApplicationTaskPlan{}, err
 	}
@@ -758,9 +766,6 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 
 func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, endpointURL string) ServingApplication {
 	endpointURL = strings.TrimSpace(endpointURL)
-	if endpointURL == "" {
-		endpointURL = defaultEndpointURL(app)
-	}
 	ready := app.Phase == ServingApplicationPhaseReady
 	for _, endpoint := range s.data.Endpoints {
 		if endpoint.ServingApplicationID == app.ID {
@@ -831,18 +836,6 @@ func buildObservabilityEntry(app ServingApplication, cluster InferenceCluster) O
 			},
 		},
 	}
-}
-
-func defaultEndpointURL(app ServingApplication) string {
-	endpointName := strings.TrimSpace(app.Service.EndpointName)
-	if endpointName == "" {
-		endpointName = kubernetesName(app.Name)
-	}
-	namespace := strings.TrimSpace(app.Placement.Namespace)
-	if namespace == "" {
-		namespace = "default"
-	}
-	return "http://" + endpointName + "." + namespace + ".svc.cluster.local:8000/v1"
 }
 
 func (s *FileStore) sortedTasksLocked() []Task {
@@ -924,21 +917,8 @@ func validateServingApplicationIntent(req CreateServingApplicationRequest, artif
 	return nil
 }
 
-func isAllowedTaskType(taskType TaskType) bool {
-	switch taskType {
-	case TaskTypeRegisterCluster,
-		TaskTypeValidateIntent,
-		TaskTypePreviewDeploymentDiff,
-		TaskTypeApplyDeployment,
-		TaskTypeDeleteBeforeApply,
-		TaskTypeInspectStatus,
-		TaskTypeRetireDeployment,
-		TaskTypeFetchDiagnostics,
-		TaskTypeSyncEndpointReadiness:
-		return true
-	default:
-		return false
-	}
+func isAllowedTaskType(taskType platformtask.TaskType) bool {
+	return platformtask.IsWhitelisted(taskType)
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

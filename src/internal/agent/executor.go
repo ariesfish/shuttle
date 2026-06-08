@@ -18,6 +18,17 @@ type Executor interface {
 	Execute(ctx context.Context, task management.Task) (map[string]any, error)
 }
 
+// ClusterRuntime is the deep seam where the Cluster Agent performs
+// Serving Application runtime actions inside an Inference Cluster. The kubectl
+// adapters below are implementation details behind these domain-level actions.
+type ClusterRuntime interface {
+	PreviewDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error)
+	ApplyDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error)
+	DeleteBeforeApply(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error)
+	RetireDeployment(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error)
+	FetchDiagnostics(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error)
+}
+
 type TaskExecutor struct {
 	dryRunner   ManifestDryRunner
 	applier     ManifestApplier
@@ -54,27 +65,25 @@ func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier Manifest
 }
 
 func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (map[string]any, error) {
-	switch task.Type {
-	case management.TaskTypePreviewDeploymentDiff, management.TaskTypeApplyDeployment, management.TaskTypeDeleteBeforeApply, management.TaskTypeRetireDeployment, management.TaskTypeFetchDiagnostics:
-	default:
+	if !platformtask.IsAgentExecutable(platformtask.TaskType(task.Type)) {
 		return map[string]any{"mode": "fake-noop", "taskType": task.Type}, nil
 	}
-	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	payload, err := platformtask.DecodePayload(platformtask.NewDTO(task.ID, task.ClusterID, platformtask.TaskType(task.Type), task.Payload, nil, ""))
 	if err != nil {
 		return nil, err
 	}
 	resourceRef := agentResourceRef(payload.Resource())
 	switch value := payload.(type) {
 	case platformtask.RenderedDeploymentPayload:
-		if task.Type == management.TaskTypePreviewDeploymentDiff {
+		if task.Type == platformtask.TaskTypePreviewDeploymentDiff {
 			return map[string]any{"mode": "fake-server-side-dry-run", "manifestCount": len(value.Manifests()), "stdout": "fake dry-run ok", "phase": "Validated"}, nil
 		}
-		if task.Type == management.TaskTypeDeleteBeforeApply {
+		if task.Type == platformtask.TaskTypeDeleteBeforeApply {
 			return map[string]any{"mode": "fake-delete-before-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "deletedBeforeApply": true, "message": "fake redeploy ok"}, nil
 		}
 		return map[string]any{"mode": "fake-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "message": "fake apply ok"}, nil
 	case platformtask.ResourcePayload:
-		if task.Type == management.TaskTypeRetireDeployment {
+		if task.Type == platformtask.TaskTypeRetireDeployment {
 			return map[string]any{"mode": "fake-retire", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "deleted": true, "message": "fake retire ok"}, nil
 		}
 		return map[string]any{"mode": "fake-diagnostics", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "sections": []any{}}, nil
@@ -84,31 +93,69 @@ func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (
 }
 
 func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[string]any, error) {
-	switch task.Type {
-	case management.TaskTypePreviewDeploymentDiff:
-		return e.previewDeploymentDiff(ctx, task)
-	case management.TaskTypeApplyDeployment:
-		return e.applyDeployment(ctx, task)
-	case management.TaskTypeDeleteBeforeApply:
-		return e.deleteBeforeApply(ctx, task)
-	case management.TaskTypeRetireDeployment:
-		return e.retireDeployment(ctx, task)
-	case management.TaskTypeFetchDiagnostics:
-		return e.fetchDiagnostics(ctx, task)
-	default:
-		return map[string]any{
-			"mode":      "noop",
-			"taskType":  task.Type,
-			"handledAt": e.now().UTC().Format(time.RFC3339),
-		}, nil
+	runtime := e.clusterRuntime()
+	switch platformtask.PayloadKindFor(platformtask.TaskType(task.Type)) {
+	case platformtask.PayloadKindRenderedDeployment:
+		payload, err := renderedDeploymentPayload(task)
+		if err != nil {
+			return nil, err
+		}
+		switch task.Type {
+		case platformtask.TaskTypePreviewDeploymentDiff:
+			return runtime.PreviewDeployment(ctx, payload)
+		case platformtask.TaskTypeApplyDeployment:
+			return runtime.ApplyDeployment(ctx, payload)
+		case platformtask.TaskTypeDeleteBeforeApply:
+			return runtime.DeleteBeforeApply(ctx, payload)
+		}
+	case platformtask.PayloadKindResource:
+		payload, err := resourcePayload(task)
+		if err != nil {
+			return nil, err
+		}
+		switch task.Type {
+		case platformtask.TaskTypeRetireDeployment:
+			return runtime.RetireDeployment(ctx, payload)
+		case platformtask.TaskTypeFetchDiagnostics:
+			return runtime.FetchDiagnostics(ctx, payload)
+		}
 	}
+	return map[string]any{
+		"mode":      "noop",
+		"taskType":  task.Type,
+		"handledAt": e.now().UTC().Format(time.RFC3339),
+	}, nil
 }
 
-func (e *TaskExecutor) previewDeploymentDiff(ctx context.Context, task management.Task) (map[string]any, error) {
-	payload, err := renderedDeploymentPayload(task)
-	if err != nil {
-		return nil, err
-	}
+func (e *TaskExecutor) clusterRuntime() ClusterRuntime {
+	return taskExecutorRuntime{executor: e}
+}
+
+type taskExecutorRuntime struct {
+	executor *TaskExecutor
+}
+
+func (r taskExecutorRuntime) PreviewDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+	return r.executor.previewDeploymentDiffPayload(ctx, payload)
+}
+
+func (r taskExecutorRuntime) ApplyDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+	return r.executor.applyDeploymentPayload(ctx, payload)
+}
+
+func (r taskExecutorRuntime) DeleteBeforeApply(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+	return r.executor.deleteBeforeApplyPayload(ctx, payload)
+}
+
+func (r taskExecutorRuntime) RetireDeployment(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
+	return r.executor.retireDeploymentPayload(ctx, payload)
+}
+
+func (r taskExecutorRuntime) FetchDiagnostics(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
+	return r.executor.fetchDiagnosticsPayload(ctx, payload)
+}
+
+func (e *TaskExecutor) previewDeploymentDiffPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
 	manifests := agentManifests(payload.Manifests())
 	result, err := e.dryRunner.ServerSideDryRun(ctx, manifests)
 	if err != nil {
@@ -123,7 +170,7 @@ func (e *TaskExecutor) previewDeploymentDiff(ctx context.Context, task managemen
 }
 
 func renderedDeploymentPayload(task management.Task) (platformtask.RenderedDeploymentPayload, error) {
-	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	payload, err := platformtask.DecodePayload(platformtask.NewDTO(task.ID, task.ClusterID, platformtask.TaskType(task.Type), task.Payload, nil, ""))
 	if err != nil {
 		return platformtask.RenderedDeploymentPayload{}, err
 	}
@@ -135,7 +182,7 @@ func renderedDeploymentPayload(task management.Task) (platformtask.RenderedDeplo
 }
 
 func resourcePayload(task management.Task) (platformtask.ResourcePayload, error) {
-	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	payload, err := platformtask.DecodePayload(platformtask.NewDTO(task.ID, task.ClusterID, platformtask.TaskType(task.Type), task.Payload, nil, ""))
 	if err != nil {
 		return platformtask.ResourcePayload{}, err
 	}
@@ -172,32 +219,20 @@ type DryRunResult struct {
 	Stderr string
 }
 
-func (e *TaskExecutor) applyDeployment(ctx context.Context, task management.Task) (map[string]any, error) {
-	payload, err := renderedDeploymentPayload(task)
-	if err != nil {
-		return nil, err
-	}
-	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), agentResourceRef(payload.Resource()), platformtask.TypeApplyDeployment, nil)
+func (e *TaskExecutor) applyDeploymentPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), agentResourceRef(payload.Resource()), platformtask.TaskTypeApplyDeployment, nil)
 }
 
-func (e *TaskExecutor) deleteBeforeApply(ctx context.Context, task management.Task) (map[string]any, error) {
-	payload, err := renderedDeploymentPayload(task)
-	if err != nil {
-		return nil, err
-	}
+func (e *TaskExecutor) deleteBeforeApplyPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
 	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
-	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), resourceRef, platformtask.TypeDeleteBeforeApply, &deleteResult)
+	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), resourceRef, platformtask.TaskTypeDeleteBeforeApply, &deleteResult)
 }
 
-func (e *TaskExecutor) retireDeployment(ctx context.Context, task management.Task) (map[string]any, error) {
-	payload, err := resourcePayload(task)
-	if err != nil {
-		return nil, err
-	}
+func (e *TaskExecutor) retireDeploymentPayload(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
 	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
@@ -211,11 +246,7 @@ func (e *TaskExecutor) retireDeployment(ctx context.Context, task management.Tas
 	}), nil
 }
 
-func (e *TaskExecutor) fetchDiagnostics(ctx context.Context, task management.Task) (map[string]any, error) {
-	payload, err := resourcePayload(task)
-	if err != nil {
-		return nil, err
-	}
+func (e *TaskExecutor) fetchDiagnosticsPayload(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
 	collector := e.diagnostics
 	if collector == nil {
@@ -236,7 +267,7 @@ func (e *TaskExecutor) fetchDiagnostics(ctx context.Context, task management.Tas
 	}), nil
 }
 
-func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, taskType platformtask.Type, deleteResult *DeleteResult) (map[string]any, error) {
+func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, taskType platformtask.TaskType, deleteResult *DeleteResult) (map[string]any, error) {
 	applyResult, err := e.applier.Apply(ctx, manifests)
 	if err != nil {
 		return nil, err
