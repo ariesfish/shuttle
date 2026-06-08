@@ -19,6 +19,7 @@ func main() {
 	dataPath := flag.String("data", envOrDefault("MANAGEMENT_API_DATA", "data/management.json"), "JSON data file path")
 	postgresDSN := flag.String("postgres-dsn", os.Getenv("MANAGEMENT_API_POSTGRES_DSN"), "Postgres DSN; when set, stores state in Postgres")
 	authToken := flag.String("auth-token", os.Getenv("MANAGEMENT_API_AUTH_TOKEN"), "Bearer token for API auth; when empty, auth is disabled")
+	corsOrigin := flag.String("cors-origin", envOrDefault("MANAGEMENT_API_CORS_ORIGIN", "*"), "Allowed CORS origin")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -36,7 +37,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           management.NewServerWithAuth(store, logger, management.AuthConfig{Enabled: *authToken != "", Token: *authToken}).Routes(),
+		Handler:           management.NewServerWithOptions(store, logger, management.AuthConfig{Enabled: *authToken != "", Token: *authToken}, management.CORSConfig{AllowedOrigin: *corsOrigin}).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

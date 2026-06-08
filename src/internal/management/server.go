@@ -14,6 +14,7 @@ type Server struct {
 	logger     *slog.Logger
 	leaseTTL   time.Duration
 	authConfig AuthConfig
+	corsConfig CORSConfig
 }
 
 func NewServer(store Store, logger *slog.Logger) *Server {
@@ -21,10 +22,14 @@ func NewServer(store Store, logger *slog.Logger) *Server {
 }
 
 func NewServerWithAuth(store Store, logger *slog.Logger, authConfig AuthConfig) *Server {
+	return NewServerWithOptions(store, logger, authConfig, CORSConfig{})
+}
+
+func NewServerWithOptions(store Store, logger *slog.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig}
+	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig, corsConfig: corsConfig}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -52,7 +57,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("POST /v1/clusters/{clusterID}/tasks:lease", s.leaseTask)
 	mux.HandleFunc("POST /v1/tasks/{taskID}/complete", s.completeTask)
-	return requestLogger(s.logger, authMiddleware(s.authConfig, mux))
+	return requestLogger(s.logger, corsMiddleware(s.corsConfig, authMiddleware(s.authConfig, mux)))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
