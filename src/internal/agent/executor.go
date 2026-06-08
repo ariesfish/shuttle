@@ -25,6 +25,8 @@ type TaskExecutor struct {
 	now       func() time.Time
 }
 
+type FakeKubernetesExecutor struct{}
+
 func NewTaskExecutor(dryRunner ManifestDryRunner) *TaskExecutor {
 	return NewTaskExecutorWithApply(dryRunner, nil, nil)
 }
@@ -47,6 +49,29 @@ func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier Manifest
 		deleter = KubectlResourceDeleter{Timeout: 10 * time.Minute, Interval: 5 * time.Second}
 	}
 	return &TaskExecutor{dryRunner: dryRunner, applier: applier, watcher: watcher, deleter: deleter, now: time.Now}
+}
+
+func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (map[string]any, error) {
+	resourceRef, _ := resourceRefFromPayload(task.Payload)
+	if resourceRef.Name == "" {
+		resourceRef.Name = "fake-resource"
+	}
+	if resourceRef.Namespace == "" {
+		resourceRef.Namespace = "default"
+	}
+	switch task.Type {
+	case management.TaskTypePreviewDeploymentDiff:
+		manifests, _ := manifestsFromPayload(task.Payload)
+		return map[string]any{"mode": "fake-server-side-dry-run", "manifestCount": len(manifests), "stdout": "fake dry-run ok", "phase": "Validated"}, nil
+	case management.TaskTypeApplyDeployment:
+		return map[string]any{"mode": "fake-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "message": "fake apply ok"}, nil
+	case management.TaskTypeDeleteBeforeApply:
+		return map[string]any{"mode": "fake-delete-before-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "deletedBeforeApply": true, "message": "fake redeploy ok"}, nil
+	case management.TaskTypeRetireDeployment:
+		return map[string]any{"mode": "fake-retire", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "deleted": true, "message": "fake retire ok"}, nil
+	default:
+		return map[string]any{"mode": "fake-noop", "taskType": task.Type}, nil
+	}
 }
 
 func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[string]any, error) {

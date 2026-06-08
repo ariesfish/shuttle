@@ -30,6 +30,14 @@ go run ./cmd/cluster-agent \
   -cluster-id cluster-2 \
   -auth-token dev-secret \
   -capability dynamo=true,backend=vllm
+
+# For local UI smoke without kubectl or Dynamo CRDs:
+go run ./cmd/cluster-agent \
+  -management-url http://localhost:8080 \
+  -cluster-id cluster-2 \
+  -auth-token dev-secret \
+  -executor-mode fake \
+  -capability dynamo=true,backend=vllm
 ```
 
 ## Smoke Test

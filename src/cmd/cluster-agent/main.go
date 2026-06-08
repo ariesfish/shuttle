@@ -21,6 +21,7 @@ func main() {
 	version := flag.String("version", envOrDefault("AGENT_VERSION", "dev"), "Cluster Agent version")
 	authToken := flag.String("auth-token", os.Getenv("AGENT_AUTH_TOKEN"), "Bearer token for Management API auth")
 	capabilities := flag.String("capability", os.Getenv("AGENT_CAPABILITIES"), "Comma-separated key=value capabilities")
+	executorMode := flag.String("executor-mode", envOrDefault("AGENT_EXECUTOR_MODE", "kubectl"), "Task executor mode: kubectl or fake")
 	pollInterval := flag.Duration("poll-interval", durationEnvOrDefault("AGENT_POLL_INTERVAL", 5*time.Second), "Task polling interval")
 	heartbeatInterval := flag.Duration("heartbeat-interval", durationEnvOrDefault("AGENT_HEARTBEAT_INTERVAL", 30*time.Second), "Heartbeat interval")
 	flag.Parse()
@@ -32,14 +33,20 @@ func main() {
 	}
 
 	client := agent.NewManagementClient(*managementURL, &http.Client{Timeout: 30 * time.Second}).WithAuth(*authToken, "cluster-agent", "agent")
-	runner := agent.NewRunner(client, agent.Config{
+	config := agent.Config{
 		ManagementURL:     *managementURL,
 		ClusterID:         strings.TrimSpace(*clusterID),
 		Version:           strings.TrimSpace(*version),
 		Capabilities:      parseCapabilities(*capabilities),
 		PollInterval:      *pollInterval,
 		HeartbeatInterval: *heartbeatInterval,
-	}, logger)
+	}
+	var runner *agent.Runner
+	if strings.EqualFold(*executorMode, "fake") {
+		runner = agent.NewRunnerWithExecutor(client, config, logger, agent.FakeKubernetesExecutor{})
+	} else {
+		runner = agent.NewRunner(client, config, logger)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
