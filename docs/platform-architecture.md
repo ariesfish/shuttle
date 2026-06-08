@@ -217,6 +217,54 @@ Phase 1 polling requirements:
 - Status and event sync use cursors to avoid resending unbounded history.
 - Polling is not used for raw metrics or log forwarding.
 
+### Cluster Agent Registration
+
+Phase 1 uses an explicit cluster registration workflow. The Management Plane owns the Inference Cluster record; the Cluster Agent proves it is the in-cluster representative for that record.
+
+Registration flow:
+
+1. A platform admin creates an **Inference Cluster** record in the Management Plane.
+2. The Management Plane returns the `clusterId` and the operator provisions a Cluster Agent in that target cluster.
+3. The Cluster Agent starts with:
+   - Management API URL.
+   - `clusterId`.
+   - Agent auth token.
+   - Agent version.
+   - Capability metadata such as `dynamo=true`, `backend=vllm`, `backend=sglang`, `prometheus`, or cluster labels.
+4. The Cluster Agent sends `RegisterAgent` to the Management Plane using outbound HTTP.
+5. The Management Plane validates auth, verifies the `clusterId` exists, creates or updates the **Cluster Agent** record, and stores capability metadata.
+6. The Cluster Agent sends periodic heartbeats with version and capabilities.
+7. Only after registration succeeds does the Cluster Agent poll for tasks for its `clusterId`.
+
+```mermaid
+sequenceDiagram
+  participant Admin as Platform Admin
+  participant MP as Management Plane
+  participant K8S as Inference Cluster
+  participant AG as Cluster Agent
+
+  Admin->>MP: Create Inference Cluster
+  MP-->>Admin: clusterId + agent install values
+  Admin->>K8S: Install Cluster Agent with clusterId and auth token
+  AG->>MP: RegisterAgent(clusterId, version, capabilities)
+  MP->>MP: Validate token and clusterId
+  MP-->>AG: agentId
+  loop heartbeat
+    AG->>MP: Heartbeat(agentId, version, capabilities)
+  end
+  loop polling
+    AG->>MP: Lease next task for clusterId
+  end
+```
+
+Security and lifecycle notes:
+
+- Phase 1 uses a static bearer token MVP; production should replace this with per-agent credentials or mTLS.
+- The Management Plane should not store a broad kubeconfig for the Inference Cluster.
+- Agent capabilities are advisory metadata for validation and UI; cluster-local RBAC remains the enforcement boundary.
+- Re-registering an Agent for the same `clusterId` updates the existing Agent record rather than creating many active agents for one cluster.
+- If heartbeats stop, the cluster should be shown as unavailable for new deployment tasks until the Agent recovers.
+
 ```mermaid
 sequenceDiagram
   participant MP as Management Plane
@@ -409,7 +457,7 @@ Phase 1 prioritizes the Management Plane and Cluster Agent control loop.
 - Task completion now updates Serving Application phase for preview, apply, redeploy, and retire; richer transition history is still pending.
 - Management API can use JSON-file persistence or Postgres-backed persistence; the current Postgres implementation stores platform state as JSONB and is not yet a normalized relational schema.
 - Static bearer-token auth, role checks, and audit records are implemented as an MVP; production identity provider integration and fine-grained Project RBAC are still pending.
-- Web Console is not implemented yet.
+- Web Console is not implemented yet; Phase 1 frontend stack is React + Vite + TanStack Query + shadcn/ui.
 - Endpoint Registry is implemented for cluster-local service URLs; Observability Entry returns Grafana deep links and Prometheus query templates, but does not query Prometheus yet.
 
 ## Implementation Phases
@@ -499,7 +547,7 @@ Deliverables:
 2. Add production identity provider integration and fine-grained Project RBAC.
 3. Add exact resource-name fallback cleanup when label-based delete-before-apply cleanup is insufficient.
 4. Add optional Prometheus query execution for selected summary metrics.
-5. Add Web Console minimal pages after API and Agent control loop stabilize.
+5. Add minimal Web Console using React, Vite, TanStack Query, and shadcn/ui after API and Agent control loop stabilize.
 6. Replace generated service DNS defaults with discovered external cluster-local endpoint URLs when ingress/gateway details are available.
 
 ## Out of Scope for Phase 1
