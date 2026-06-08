@@ -147,7 +147,11 @@ type DiagnosticsResult struct {
 func (r DiagnosticsResult) TaskType() TaskType { return TaskTypeFetchDiagnostics }
 
 func BuildRenderedDeploymentTask(input RenderedDeploymentTaskInput) (Envelope, error) {
-	if PayloadKindFor(input.Type) != PayloadKindRenderedDeployment {
+	return DefaultRegistry().BuildRenderedDeployment(input)
+}
+
+func buildRenderedDeploymentTask(registry Registry, input RenderedDeploymentTaskInput) (Envelope, error) {
+	if registry.PayloadKindFor(input.Type) != PayloadKindRenderedDeployment {
 		return Envelope{}, fmt.Errorf("%w: %s", ErrUnsupportedType, input.Type)
 	}
 	if strings.TrimSpace(input.ServingApplicationID) == "" || strings.TrimSpace(input.ClusterID) == "" {
@@ -172,7 +176,11 @@ func BuildRenderedDeploymentTask(input RenderedDeploymentTaskInput) (Envelope, e
 }
 
 func BuildResourceTask(input ResourceTaskInput) (Envelope, error) {
-	if PayloadKindFor(input.Type) != PayloadKindResource {
+	return DefaultRegistry().BuildResource(input)
+}
+
+func buildResourceTask(registry Registry, input ResourceTaskInput) (Envelope, error) {
+	if registry.PayloadKindFor(input.Type) != PayloadKindResource {
 		return Envelope{}, fmt.Errorf("%w: %s", ErrUnsupportedType, input.Type)
 	}
 	if strings.TrimSpace(input.ServingApplicationID) == "" || strings.TrimSpace(input.ClusterID) == "" {
@@ -187,7 +195,11 @@ func BuildResourceTask(input ResourceTaskInput) (Envelope, error) {
 }
 
 func DecodePayload(dto DTO) (Payload, error) {
-	switch PayloadKindFor(dto.Type) {
+	return DefaultRegistry().DecodePayload(dto)
+}
+
+func decodePayload(registry Registry, dto DTO) (Payload, error) {
+	switch registry.PayloadKindFor(dto.Type) {
 	case PayloadKindRenderedDeployment:
 		appID, _ := dto.Payload["servingApplicationId"].(string)
 		if strings.TrimSpace(appID) == "" {
@@ -230,7 +242,11 @@ func DecodePayload(dto DTO) (Payload, error) {
 }
 
 func DecodeResult(dto DTO) (Result, error) {
-	switch PayloadKindFor(dto.Type) {
+	return DefaultRegistry().DecodeResult(dto)
+}
+
+func decodeResult(registry Registry, dto DTO) (Result, error) {
+	switch registry.PayloadKindFor(dto.Type) {
 	case PayloadKindRenderedDeployment:
 		if dto.Type == TaskTypePreviewDeploymentDiff {
 			return PreviewResult{ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), HandledAt: parseHandledAt(dto.Result)}, nil

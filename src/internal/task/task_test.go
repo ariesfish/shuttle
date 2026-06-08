@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+func TestRegistryDefinitionsDescribeTaskContract(t *testing.T) {
+	registry := DefaultRegistry()
+	cases := []struct {
+		taskType        TaskType
+		payloadKind     PayloadKind
+		resultKind      ResultKind
+		agentExecutable bool
+		effect          LifecycleEffect
+	}{
+		{TaskTypePreviewDeploymentDiff, PayloadKindRenderedDeployment, ResultKindPreview, true, LifecycleEffectPreview},
+		{TaskTypeApplyDeployment, PayloadKindRenderedDeployment, ResultKindDeployment, true, LifecycleEffectDeployment},
+		{TaskTypeDeleteBeforeApply, PayloadKindRenderedDeployment, ResultKindDeployment, true, LifecycleEffectDeployment},
+		{TaskTypeRetireDeployment, PayloadKindResource, ResultKindRetire, true, LifecycleEffectRetire},
+		{TaskTypeFetchDiagnostics, PayloadKindResource, ResultKindDiagnostics, true, LifecycleEffectDiagnostics},
+		{TaskTypeInspectStatus, PayloadKindNone, ResultKindNone, false, LifecycleEffectNone},
+	}
+	for _, tc := range cases {
+		if registry.PayloadKindFor(tc.taskType) != tc.payloadKind || registry.ResultKindFor(tc.taskType) != tc.resultKind || registry.IsAgentExecutable(tc.taskType) != tc.agentExecutable || registry.LifecycleEffectFor(tc.taskType) != tc.effect {
+			t.Fatalf("unexpected definition for %s: %+v", tc.taskType, registry.definitions[tc.taskType])
+		}
+	}
+	if registry.IsWhitelisted(TaskType("ArbitraryKubectl")) || registry.LifecycleEffectFor(TaskType("ArbitraryKubectl")) != LifecycleEffectNone {
+		t.Fatalf("unsupported task type should not be whitelisted")
+	}
+}
+
 func TestBuildRenderedDeploymentTaskEncodesPayload(t *testing.T) {
 	envelope, err := BuildRenderedDeploymentTask(RenderedDeploymentTaskInput{
 		Type:                 TaskTypeApplyDeployment,
