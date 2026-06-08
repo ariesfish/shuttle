@@ -181,6 +181,14 @@ export interface ObservabilityEntry {
   prometheusQueries: Array<{ name: string; description: string; query: string }>;
 }
 
+export interface ObservabilitySummary {
+  servingApplicationId: string;
+  clusterId: string;
+  namespace: string;
+  prometheusUrl?: string;
+  results: Array<{ name: string; description: string; query: string; value?: string; error?: string; fetchedAt: string }>;
+}
+
 export interface AuditRecord {
   id: string;
   actor: string;
@@ -256,5 +264,6 @@ export const api = {
   listTasks: () => request<Task[]>('/v1/tasks'),
   listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/serving-applications/${appId}/observability`),
+  getObservabilitySummary: (appId: string) => request<ObservabilitySummary>(`/v1/serving-applications/${appId}/observability/summary`),
   listAuditRecords: () => request<AuditRecord[]>('/v1/audit-records'),
 };

@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type CreateServingApplicationInput, type ServingApplication, type ServingRecipe, type Task } from './api';
+import { api, type CreateServingApplicationInput, type ObservabilitySummary, type ServingApplication, type ServingRecipe, type Task } from './api';
 import { useI18n } from './i18n';
 
 const fallbackDefaults = {
@@ -71,6 +71,12 @@ export function ServingAppsPage() {
     queryFn: () => api.listServingApplicationTransitions(selectedAppId),
     enabled: Boolean(selectedAppId),
     refetchInterval: 2000,
+  });
+  const observabilitySummary = useQuery({
+    queryKey: ['observability-summary', selectedAppId],
+    queryFn: () => api.getObservabilitySummary(selectedAppId),
+    enabled: Boolean(selectedAppId),
+    refetchInterval: 10000,
   });
 
   const endpointsByApp = useMemo(() => {
@@ -170,6 +176,7 @@ export function ServingAppsPage() {
           {!selectedAppId ? <p className="muted">Select a Serving Application to inspect transitions and diagnostics.</p> : null}
           {selectedAppId ? (
             <div className="grid">
+              <ObservabilitySummaryCard summary={observabilitySummary.data} error={observabilitySummary.error?.message} />
               <div>
                 <h3>Transitions</h3>
                 {transitions.data?.slice(-8).reverse().map((transition) => (
@@ -218,6 +225,23 @@ function ServingAppRow({ app, endpoint, selected, onSelect, onAction, disabled }
         </div>
       </td>
     </tr>
+  );
+}
+
+function ObservabilitySummaryCard({ summary, error }: { summary?: ObservabilitySummary; error?: string }) {
+  return (
+    <div>
+      <h3>Observability</h3>
+      {error ? <p className="error">{error}</p> : null}
+      {!summary ? <p className="muted">Loading Prometheus summary...</p> : null}
+      {summary?.results.map((result) => (
+        <div key={result.name} className="card" style={{ marginBottom: 8 }}>
+          <strong>{result.name}</strong> <span className="badge muted">{result.value || '-'}</span>
+          <div className="muted">{result.description}</div>
+          {result.error ? <div className="error">{result.error}</div> : null}
+        </div>
+      ))}
+    </div>
   );
 }
 

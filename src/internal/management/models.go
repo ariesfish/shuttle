@@ -143,6 +143,23 @@ type PrometheusQuery struct {
 	Query       string `json:"query"`
 }
 
+type PrometheusQueryResult struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Query       string    `json:"query"`
+	Value       string    `json:"value,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	FetchedAt   time.Time `json:"fetchedAt"`
+}
+
+type ObservabilitySummary struct {
+	ServingApplicationID string                  `json:"servingApplicationId"`
+	ClusterID            string                  `json:"clusterId"`
+	Namespace            string                  `json:"namespace"`
+	PrometheusURL        string                  `json:"prometheusUrl,omitempty"`
+	Results              []PrometheusQueryResult `json:"results"`
+}
+
 type EndpointRegistryEntry struct {
 	ID                   string    `json:"id"`
 	ServingApplicationID string    `json:"servingApplicationId"`

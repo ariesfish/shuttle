@@ -10,11 +10,12 @@ import (
 )
 
 type Server struct {
-	store      Store
-	logger     *slog.Logger
-	leaseTTL   time.Duration
-	authConfig AuthConfig
-	corsConfig CORSConfig
+	store            Store
+	logger           *slog.Logger
+	leaseTTL         time.Duration
+	authConfig       AuthConfig
+	corsConfig       CORSConfig
+	prometheusClient PrometheusClient
 }
 
 func NewServer(store Store, logger *slog.Logger) *Server {
@@ -29,7 +30,7 @@ func NewServerWithOptions(store Store, logger *slog.Logger, authConfig AuthConfi
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig, corsConfig: corsConfig}
+	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig, corsConfig: corsConfig, prometheusClient: HTTPPrometheusClient{}}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -54,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/diagnostics-task", s.createDiagnosticsTask)
 	mux.HandleFunc("GET /v1/serving-applications/{appID}/transitions", s.listServingApplicationTransitions)
 	mux.HandleFunc("GET /v1/serving-applications/{appID}/observability", s.getObservabilityEntry)
+	mux.HandleFunc("GET /v1/serving-applications/{appID}/observability/summary", s.getObservabilitySummary)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
 	mux.HandleFunc("GET /v1/audit-records", s.listAuditRecords)
 	mux.HandleFunc("POST /v1/tasks", s.createTask)
@@ -245,6 +247,33 @@ func (s *Server) listServingApplicationTransitions(w http.ResponseWriter, r *htt
 func (s *Server) getObservabilityEntry(w http.ResponseWriter, r *http.Request) {
 	entry, err := s.store.GetObservabilityEntry(r.PathValue("appID"))
 	writeResult(w, entry, http.StatusOK, err)
+}
+
+func (s *Server) getObservabilitySummary(w http.ResponseWriter, r *http.Request) {
+	entry, err := s.store.GetObservabilityEntry(r.PathValue("appID"))
+	if err != nil {
+		writeResult(w, ObservabilitySummary{}, http.StatusOK, err)
+		return
+	}
+	now := time.Now().UTC()
+	summary := ObservabilitySummary{
+		ServingApplicationID: entry.ServingApplicationID,
+		ClusterID:            entry.ClusterID,
+		Namespace:            entry.Namespace,
+		PrometheusURL:        entry.PrometheusURL,
+		Results:              make([]PrometheusQueryResult, 0, len(entry.PrometheusQueries)),
+	}
+	for _, query := range entry.PrometheusQueries {
+		result := PrometheusQueryResult{Name: query.Name, Description: query.Description, Query: query.Query, FetchedAt: now}
+		value, err := s.prometheusClient.Query(r.Context(), entry.PrometheusURL, query.Query)
+		if err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Value = value
+		}
+		summary.Results = append(summary.Results, result)
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {
