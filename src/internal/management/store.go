@@ -42,15 +42,10 @@ type Store interface {
 	ListAuditRecords() ([]AuditRecord, error)
 	RecordAudit(actor, action, resource string, metadata map[string]any) (AuditRecord, error)
 	CreateTask(CreateTaskRequest) (Task, error)
-	CreatePreviewTask(CreatePreviewTaskRequest) (Task, error)
-	CreateApplyTask(CreateApplyTaskRequest) (Task, error)
-	CreateRedeployTask(CreateRedeployTaskRequest) (Task, error)
-	CreateRetireTask(CreateRetireTaskRequest) (Task, error)
-	CreateDiagnosticsTask(CreateDiagnosticsTaskRequest) (Task, error)
 	ListTasks(clusterID string) ([]Task, error)
 	LeaseNextTask(clusterID string, req LeaseTaskRequest, ttl time.Duration) (Task, error)
 	RenewTaskLease(taskID string, req RenewTaskLeaseRequest, ttl time.Duration) (Task, error)
-	CompleteTask(taskID string, req CompleteTaskRequest) (Task, error)
+	ServingApplicationLifecycleRepository
 }
 
 type FileStore struct {
@@ -474,77 +469,85 @@ func (s *FileStore) newTaskLocked(req CreateTaskRequest) Task {
 	}
 }
 
-func (s *FileStore) CreatePreviewTask(req CreatePreviewTaskRequest) (Task, error) {
+func (s *FileStore) LoadActionState(appID string) (ServingApplicationActionState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypePreviewDeploymentDiff)
-	if err != nil {
-		return Task{}, err
-	}
-	s.applyTaskPlanTransitionLocked(req.ServingApplicationID, task.ID, plan)
-	s.data.Tasks[task.ID] = task
-	return task, s.saveLocked()
-}
-
-func (s *FileStore) CreateApplyTask(req CreateApplyTaskRequest) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypeApplyDeployment)
-	if err != nil {
-		return Task{}, err
-	}
-	s.applyTaskPlanTransitionLocked(req.ServingApplicationID, task.ID, plan)
-	s.data.Tasks[task.ID] = task
-	return task, s.saveLocked()
-}
-
-func (s *FileStore) CreateRedeployTask(req CreateRedeployTaskRequest) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, plan, err := s.newRenderedTaskLocked(req.ServingApplicationID, platformtask.TaskTypeDeleteBeforeApply)
-	if err != nil {
-		return Task{}, err
-	}
-	s.applyTaskPlanTransitionLocked(req.ServingApplicationID, task.ID, plan)
-	s.data.Tasks[task.ID] = task
-	return task, s.saveLocked()
-}
-
-func (s *FileStore) CreateRetireTask(req CreateRetireTaskRequest) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	app, ok := s.data.ServingApplications[req.ServingApplicationID]
+	app, ok := s.data.ServingApplications[appID]
 	if !ok {
-		return Task{}, ErrNotFound
+		return ServingApplicationActionState{}, ErrNotFound
 	}
-	plan, err := ServingApplicationControlLoop{}.PlanRetireTask(app)
-	if err != nil {
-		return Task{}, err
+	artifact, ok := s.data.ModelArtifacts[app.Model.ArtifactID]
+	if !ok {
+		return ServingApplicationActionState{}, fmt.Errorf("%w: model artifact does not exist", ErrInvalidInput)
 	}
-	task := s.newTaskFromPlanLocked(plan)
-	s.applyTaskPlanTransitionLocked(app.ID, task.ID, plan)
+	recipe, ok := s.recipes.Get(app.Runtime.Recipe)
+	if !ok {
+		return ServingApplicationActionState{}, fmt.Errorf("%w: unsupported recipe", ErrInvalidInput)
+	}
+	cluster, ok := s.data.Clusters[app.Placement.ClusterID]
+	if !ok {
+		return ServingApplicationActionState{}, fmt.Errorf("%w: cluster does not exist", ErrInvalidInput)
+	}
+	return ServingApplicationActionState{App: app, Artifact: artifact, Recipe: recipe, Cluster: cluster}, nil
+}
+
+func (s *FileStore) SaveRequestedAction(request ServingApplicationRequestedAction) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task := s.newTaskFromEnvelopeLocked(request.Task)
+	if request.TransitionPhase != "" {
+		actor := request.Actor
+		if actor == "" {
+			actor = "system"
+		}
+		s.setServingApplicationPhaseLocked(request.Task.Payload.ServingApplicationID(), actor, task.ID, request.TransitionPhase, request.TransitionReason)
+	}
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
 }
 
-func (s *FileStore) CreateDiagnosticsTask(req CreateDiagnosticsTaskRequest) (Task, error) {
+func (s *FileStore) LoadCompletionState(taskID string) (ServingApplicationCompletionState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	app, ok := s.data.ServingApplications[req.ServingApplicationID]
+	task, ok := s.data.Tasks[taskID]
 	if !ok {
-		return Task{}, ErrNotFound
+		return ServingApplicationCompletionState{}, ErrNotFound
 	}
-	plan, err := ServingApplicationControlLoop{}.PlanDiagnosticsTask(app)
+	appID, err := servingApplicationIDForTask(platformtask.DefaultRegistry(), task)
 	if err != nil {
-		return Task{}, err
+		return ServingApplicationCompletionState{Task: task}, nil
 	}
-	task := s.newTaskFromPlanLocked(plan)
+	app, ok := s.data.ServingApplications[appID]
+	if !ok {
+		return ServingApplicationCompletionState{Task: task}, nil
+	}
+	return ServingApplicationCompletionState{App: app, Task: task}, nil
+}
+
+func (s *FileStore) SaveAcceptedCompletion(accepted ServingApplicationAcceptedCompletion) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task := accepted.Task
 	s.data.Tasks[task.ID] = task
+	if accepted.Phase != "" && accepted.Task.Payload != nil {
+		appID, err := servingApplicationIDForTask(platformtask.DefaultRegistry(), task)
+		if err == nil {
+			s.setServingApplicationPhaseLocked(appID, task.LeaseOwner, task.ID, accepted.Phase, accepted.Reason)
+			switch accepted.EndpointOperation {
+			case EndpointOperationUpsert:
+				updatedApp := s.data.ServingApplications[appID]
+				updatedApp = s.upsertEndpointLocked(updatedApp, accepted.Endpoint)
+				updatedApp.UpdatedAt = s.now().UTC()
+				s.data.ServingApplications[updatedApp.ID] = updatedApp
+			case EndpointOperationRemove:
+				s.removeEndpointForServingApplicationLocked(appID)
+			}
+		}
+	}
 	return task, s.saveLocked()
 }
 
@@ -578,55 +581,12 @@ func (s *FileStore) recordServingApplicationTransitionLocked(appID string, actor
 	s.data.Transitions[transition.ID] = transition
 }
 
-func (s *FileStore) newTaskFromPlanLocked(plan ServingApplicationTaskPlan) Task {
+func (s *FileStore) newTaskFromEnvelopeLocked(envelope platformtask.Envelope) Task {
 	return s.newTaskLocked(CreateTaskRequest{
-		ClusterID: plan.ClusterID,
-		Type:      plan.Type,
-		Payload:   platformtask.EncodePayload(plan.Payload),
+		ClusterID: envelope.ClusterID,
+		Type:      envelope.Type,
+		Payload:   platformtask.EncodePayload(envelope.Payload),
 	})
-}
-
-func (s *FileStore) applyTaskPlanTransitionLocked(appID string, taskID string, plan ServingApplicationTaskPlan) {
-	if plan.TransitionPhase == "" {
-		return
-	}
-	s.setServingApplicationPhaseLocked(appID, "system", taskID, plan.TransitionPhase, plan.TransitionReason)
-}
-
-func (s *FileStore) newRenderedTaskLocked(appID string, taskType platformtask.TaskType) (Task, ServingApplicationTaskPlan, error) {
-	app, ok := s.data.ServingApplications[appID]
-	if !ok {
-		return Task{}, ServingApplicationTaskPlan{}, ErrNotFound
-	}
-	artifact, ok := s.data.ModelArtifacts[app.Model.ArtifactID]
-	if !ok {
-		return Task{}, ServingApplicationTaskPlan{}, fmt.Errorf("%w: model artifact does not exist", ErrInvalidInput)
-	}
-	recipe, ok := s.recipes.Get(app.Runtime.Recipe)
-	if !ok {
-		return Task{}, ServingApplicationTaskPlan{}, fmt.Errorf("%w: unsupported recipe", ErrInvalidInput)
-	}
-	manifest, err := RenderRecipeTemplate(recipe, app, artifact)
-	if err != nil {
-		return Task{}, ServingApplicationTaskPlan{}, err
-	}
-	control := ServingApplicationControlLoop{}
-	renderedManifest := RenderedDeploymentManifest{Name: manifest.Name, Content: manifest.Content}
-	var plan ServingApplicationTaskPlan
-	switch taskType {
-	case platformtask.TaskTypePreviewDeploymentDiff:
-		plan, err = control.PlanPreviewTask(app, renderedManifest)
-	case platformtask.TaskTypeApplyDeployment:
-		plan, err = control.PlanApplyTask(app, renderedManifest)
-	case platformtask.TaskTypeDeleteBeforeApply:
-		plan, err = control.PlanRedeployTask(app, renderedManifest)
-	default:
-		err = fmt.Errorf("%w: unsupported rendered task type", ErrInvalidInput)
-	}
-	if err != nil {
-		return Task{}, ServingApplicationTaskPlan{}, err
-	}
-	return s.newTaskFromPlanLocked(plan), plan, nil
 }
 
 func (s *FileStore) ListTasks(clusterID string) ([]Task, error) {
@@ -700,68 +660,6 @@ func (s *FileStore) RenewTaskLease(taskID string, req RenewTaskLeaseRequest, ttl
 	task.UpdatedAt = now
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
-}
-
-func (s *FileStore) CompleteTask(taskID string, req CompleteTaskRequest) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, ok := s.data.Tasks[taskID]
-	if !ok {
-		return Task{}, ErrNotFound
-	}
-	if req.Status != TaskStatusSucceeded && req.Status != TaskStatusFailed {
-		return Task{}, fmt.Errorf("%w: completion status must be succeeded or failed", ErrInvalidInput)
-	}
-	if task.Status == TaskStatusSucceeded || task.Status == TaskStatusFailed {
-		if task.LeaseOwner == req.AgentID && task.Status == req.Status {
-			return task, nil
-		}
-		return Task{}, ErrTaskLeaseHeld
-	}
-	if task.LeaseOwner != req.AgentID {
-		return Task{}, ErrTaskLeaseHeld
-	}
-
-	now := s.now().UTC()
-	task.Status = req.Status
-	task.Result = cloneAnyMap(req.Result)
-	task.Error = strings.TrimSpace(req.Error)
-	task.UpdatedAt = now
-	s.data.Tasks[task.ID] = task
-	s.updateServingApplicationPhaseForTaskLocked(task)
-	return task, s.saveLocked()
-}
-
-func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
-	control := ServingApplicationControlLoop{}
-	appID, err := control.ServingApplicationIDForTask(task)
-	if err != nil {
-		return
-	}
-	app, ok := s.data.ServingApplications[appID]
-	if !ok {
-		return
-	}
-
-	plan, err := control.CompleteTask(app, task)
-	if err != nil {
-		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseFailed, err.Error())
-		return
-	}
-	if plan.Phase == "" {
-		return
-	}
-	s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, plan.Phase, plan.Reason)
-	switch plan.EndpointOperation {
-	case EndpointOperationUpsert:
-		updatedApp := s.data.ServingApplications[app.ID]
-		updatedApp = s.upsertEndpointLocked(updatedApp, plan.Endpoint)
-		updatedApp.UpdatedAt = s.now().UTC()
-		s.data.ServingApplications[updatedApp.ID] = updatedApp
-	case EndpointOperationRemove:
-		s.removeEndpointForServingApplicationLocked(app.ID)
-	}
 }
 
 func (s *FileStore) upsertEndpointLocked(app ServingApplication, planned EndpointRegistryEntry) ServingApplication {

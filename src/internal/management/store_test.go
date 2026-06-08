@@ -64,13 +64,13 @@ func TestProjectClusterAgentAndTaskLifecycle(t *testing.T) {
 		t.Fatalf("unexpected lease: %+v", leased)
 	}
 
-	completed, err := store.CompleteTask(task.ID, CompleteTaskRequest{
+	completed, err := NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), task.ID, CompleteTaskRequest{
 		AgentID: agent.ID,
 		Status:  TaskStatusSucceeded,
 		Result: map[string]any{
 			"phase": "Ready",
 		},
-	})
+	}, agent.ID)
 	if err != nil {
 		t.Fatalf("complete task: %v", err)
 	}
@@ -131,18 +131,18 @@ func TestCompleteTaskIsIdempotentAfterTerminalState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "first"}})
+	first, err := NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "first"}}, agent.ID)
 	if err != nil {
 		t.Fatalf("first complete: %v", err)
 	}
-	second, err := store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "second"}})
+	second, err := NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "second"}}, agent.ID)
 	if err != nil {
 		t.Fatalf("second complete: %v", err)
 	}
 	if second.Result["attempt"] != "first" || !second.UpdatedAt.Equal(first.UpdatedAt) || leased.ID != second.ID {
 		t.Fatalf("expected idempotent complete to preserve terminal task, first=%+v second=%+v", first, second)
 	}
-	_, err = store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusFailed})
+	_, err = NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusFailed}, agent.ID)
 	if !errors.Is(err, ErrTaskLeaseHeld) {
 		t.Fatalf("expected conflicting terminal complete to fail, got %v", err)
 	}
@@ -234,7 +234,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 		t.Fatalf("unexpected observability entry: %+v", observability)
 	}
 
-	task, err := store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: app.ID})
+	task, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionPreview, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 		t.Fatalf("unexpected manifests payload: %+v", task.Payload)
 	}
 
-	applyTask, err := store.CreateApplyTask(CreateApplyTaskRequest{ServingApplicationID: app.ID})
+	applyTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionApply, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 		t.Fatalf("expected app phase Applying, got %+v", updatedApp)
 	}
 
-	redeployTask, err := store.CreateRedeployTask(CreateRedeployTaskRequest{ServingApplicationID: app.ID})
+	redeployTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionRedeploy, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,14 +276,14 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 		t.Fatalf("unexpected redeploy task: %+v", redeployTask)
 	}
 
-	retireTask, err := store.CreateRetireTask(CreateRetireTaskRequest{ServingApplicationID: app.ID})
+	retireTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionRetire, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if retireTask.Type != platformtask.TaskTypeRetireDeployment || retireTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected retire task: %+v", retireTask)
 	}
-	diagnosticsTask, err := store.CreateDiagnosticsTask(CreateDiagnosticsTaskRequest{ServingApplicationID: app.ID})
+	diagnosticsTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionDiagnostics, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 		t.Fatalf("expected app phase Retiring, got %+v", retiringApp)
 	}
 
-	_, err = store.CompleteTask(task.ID, CompleteTaskRequest{AgentID: "agent-1", Status: TaskStatusSucceeded})
+	_, err = NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), task.ID, CompleteTaskRequest{AgentID: "agent-1", Status: TaskStatusSucceeded}, "agent-1")
 	if !errors.Is(err, ErrTaskLeaseHeld) {
 		t.Fatalf("expected lease owner check, got %v", err)
 	}
@@ -311,7 +311,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.CompleteTask(leasedPreview.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded})
+	_, err = NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), leasedPreview.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded}, agent.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.CompleteTask(leasedApply.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"phase": "Ready"}})
+	_, err = NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), leasedApply.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"phase": "Ready"}}, agent.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.CompleteTask(leasedRetire.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded})
+	_, err = NewServingApplicationLifecycle(store).AcceptTaskCompletion(t.Context(), leasedRetire.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded}, agent.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,13 +433,13 @@ func TestCreateServingApplicationWithSGLangRecipeCreatesRenderedTasks(t *testing
 		t.Fatalf("unexpected app: %+v", app)
 	}
 
-	previewTask, err := store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: app.ID})
+	previewTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionPreview, "system")
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertRenderedTaskManifestContains(t, previewTask, "deepseek-v4-flash-sglang", "namespace: tenant-a", "dynamo.sglang", "path: \"/data/cache/hub\"")
 
-	applyTask, err := store.CreateApplyTask(CreateApplyTaskRequest{ServingApplicationID: app.ID})
+	applyTask, err := NewServingApplicationLifecycle(store).RequestAction(t.Context(), app.ID, ServingApplicationActionApply, "system")
 	if err != nil {
 		t.Fatal(err)
 	}

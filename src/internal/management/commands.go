@@ -9,15 +9,16 @@ import (
 var ErrForbidden = errors.New("forbidden")
 
 type ManagementCommands struct {
-	store  Store
-	logger *slog.Logger
+	store     Store
+	lifecycle *ServingApplicationLifecycle
+	logger    *slog.Logger
 }
 
 func NewManagementCommands(store Store, logger *slog.Logger) *ManagementCommands {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ManagementCommands{store: store, logger: logger}
+	return &ManagementCommands{store: store, lifecycle: NewServingApplicationLifecycle(store), logger: logger}
 }
 
 func (c *ManagementCommands) CreateProject(ctx context.Context, req CreateProjectRequest) (Project, error) {
@@ -76,33 +77,23 @@ func (c *ManagementCommands) CreateServingApplication(ctx context.Context, req C
 }
 
 func (c *ManagementCommands) CreatePreviewTask(ctx context.Context, appID string) (Task, error) {
-	return c.createServingApplicationTask(ctx, "create_preview_task", appID, func() (Task, error) {
-		return c.store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: appID})
-	})
+	return c.requestServingApplicationAction(ctx, "create_preview_task", appID, ServingApplicationActionPreview)
 }
 
 func (c *ManagementCommands) CreateApplyTask(ctx context.Context, appID string) (Task, error) {
-	return c.createServingApplicationTask(ctx, "create_apply_task", appID, func() (Task, error) {
-		return c.store.CreateApplyTask(CreateApplyTaskRequest{ServingApplicationID: appID})
-	})
+	return c.requestServingApplicationAction(ctx, "create_apply_task", appID, ServingApplicationActionApply)
 }
 
 func (c *ManagementCommands) CreateRedeployTask(ctx context.Context, appID string) (Task, error) {
-	return c.createServingApplicationTask(ctx, "create_redeploy_task", appID, func() (Task, error) {
-		return c.store.CreateRedeployTask(CreateRedeployTaskRequest{ServingApplicationID: appID})
-	})
+	return c.requestServingApplicationAction(ctx, "create_redeploy_task", appID, ServingApplicationActionRedeploy)
 }
 
 func (c *ManagementCommands) CreateRetireTask(ctx context.Context, appID string) (Task, error) {
-	return c.createServingApplicationTask(ctx, "create_retire_task", appID, func() (Task, error) {
-		return c.store.CreateRetireTask(CreateRetireTaskRequest{ServingApplicationID: appID})
-	})
+	return c.requestServingApplicationAction(ctx, "create_retire_task", appID, ServingApplicationActionRetire)
 }
 
 func (c *ManagementCommands) CreateDiagnosticsTask(ctx context.Context, appID string) (Task, error) {
-	return c.createServingApplicationTask(ctx, "create_diagnostics_task", appID, func() (Task, error) {
-		return c.store.CreateDiagnosticsTask(CreateDiagnosticsTaskRequest{ServingApplicationID: appID})
-	})
+	return c.requestServingApplicationAction(ctx, "create_diagnostics_task", appID, ServingApplicationActionDiagnostics)
 }
 
 func (c *ManagementCommands) CreateTask(ctx context.Context, req CreateTaskRequest) (Task, error) {
@@ -120,20 +111,20 @@ func (c *ManagementCommands) CompleteTask(ctx context.Context, taskID string, re
 	if err := requireActorRole(ctx, "admin", "operator", "agent"); err != nil {
 		return Task{}, err
 	}
-	task, err := c.store.CompleteTask(taskID, req)
+	task, err := c.lifecycle.AcceptTaskCompletion(ctx, taskID, req, ActorFromContext(ctx).Name)
 	if err == nil {
 		c.recordAudit(ctx, "complete_task", task.ID, map[string]any{"status": task.Status, "type": task.Type})
 	}
 	return task, err
 }
 
-func (c *ManagementCommands) createServingApplicationTask(ctx context.Context, action string, appID string, create func() (Task, error)) (Task, error) {
+func (c *ManagementCommands) requestServingApplicationAction(ctx context.Context, auditAction string, appID string, action ServingApplicationAction) (Task, error) {
 	if err := requireActorRole(ctx, "admin", "operator"); err != nil {
 		return Task{}, err
 	}
-	task, err := create()
+	task, err := c.lifecycle.RequestAction(ctx, appID, action, ActorFromContext(ctx).Name)
 	if err == nil {
-		c.recordAudit(ctx, action, task.ID, map[string]any{"servingApplicationId": appID})
+		c.recordAudit(ctx, auditAction, task.ID, map[string]any{"servingApplicationId": appID})
 	}
 	return task, err
 }
