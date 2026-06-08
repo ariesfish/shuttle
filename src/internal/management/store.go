@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	platformtask "inference-platform/internal/task"
+	platformtask "zhiliu/internal/task"
 )
 
 var (

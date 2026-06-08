@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"inference-platform/internal/management"
-	platformtask "inference-platform/internal/task"
+	"zhiliu/internal/management"
+	platformtask "zhiliu/internal/task"
 )
 
 func renderedTaskPayload(t *testing.T, taskType management.TaskType) map[string]any {

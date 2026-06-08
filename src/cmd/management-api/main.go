@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"inference-platform/internal/management"
+	"zhiliu/internal/management"
 )
 
 func main() {

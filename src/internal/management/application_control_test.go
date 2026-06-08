@@ -3,7 +3,7 @@ package management
 import (
 	"testing"
 
-	platformtask "inference-platform/internal/task"
+	platformtask "zhiliu/internal/task"
 )
 
 func TestServingApplicationControlLoopPlansApplyTask(t *testing.T) {

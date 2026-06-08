@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"inference-platform/internal/management"
-	platformtask "inference-platform/internal/task"
+	"zhiliu/internal/management"
+	platformtask "zhiliu/internal/task"
 )
 
 func previewTaskPayload(t *testing.T, clusterID string) map[string]any {

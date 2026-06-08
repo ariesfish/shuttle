@@ -3,7 +3,7 @@ package management
 import (
 	"strings"
 
-	platformtask "inference-platform/internal/task"
+	platformtask "zhiliu/internal/task"
 )
 
 type ServingApplicationControlLoop struct{}

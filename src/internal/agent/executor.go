@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"inference-platform/internal/management"
-	platformtask "inference-platform/internal/task"
+	"zhiliu/internal/management"
+	platformtask "zhiliu/internal/task"
 )
 
 type Executor interface {

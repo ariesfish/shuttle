@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"inference-platform/internal/management"
+	"zhiliu/internal/management"
 )
 
 type Config struct {

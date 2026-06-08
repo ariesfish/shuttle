@@ -1,4 +1,4 @@
-module inference-platform
+module zhiliu
 
 go 1.25.0
 

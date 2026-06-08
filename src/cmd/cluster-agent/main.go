@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"inference-platform/internal/agent"
+	"zhiliu/internal/agent"
 )
 
 func main() {

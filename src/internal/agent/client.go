@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"inference-platform/internal/management"
+	"zhiliu/internal/management"
 )
 
 type ManagementClient struct {
