@@ -2,6 +2,7 @@ package management
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -378,6 +379,99 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	}
 	if len(endpoints) != 0 {
 		t.Fatalf("expected endpoint cleanup, got %+v", endpoints)
+	}
+}
+
+func TestCreateServingApplicationWithSGLangRecipeCreatesRenderedTasks(t *testing.T) {
+	store, err := NewFileStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.CreateProject(CreateProjectRequest{Name: "platform"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster, err := store.CreateCluster(CreateClusterRequest{Name: "h200-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := store.CreateModelArtifact(CreateModelArtifactRequest{
+		Family:       "deepseek-v4",
+		Variant:      "flash",
+		Revision:     "rev1",
+		PVCMountPath: "/models",
+		PVCModelPath: "hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1",
+		Quantization: "fp8",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := store.CreateServingApplication(CreateServingApplicationRequest{
+		ProjectID: project.ID,
+		Name:      "DeepSeek V4 Flash SGLang",
+		Model: ModelIntent{
+			Family:       "deepseek-v4",
+			Variant:      "flash",
+			ArtifactID:   artifact.ID,
+			Quantization: "fp8",
+		},
+		Placement: PlacementIntent{ClusterID: cluster.ID, Namespace: "tenant-a"},
+		Runtime: RuntimeIntent{
+			Backend:  "sglang",
+			Topology: "pd-disagg",
+			Recipe:   "deepseek-v4-flash-sglang-dgd-disagg",
+		},
+		Service:      ServiceIntent{EndpointName: "deepseek-v4-flash-sglang", Protocol: "openai-compatible", Exposure: "cluster-local"},
+		Optimization: OptimizationIntent{Target: "throughput", ProfilingMode: "disabled"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Runtime.Backend != "sglang" || app.Runtime.Recipe != "deepseek-v4-flash-sglang-dgd-disagg" || app.Phase != ServingApplicationPhaseDraft {
+		t.Fatalf("unexpected app: %+v", app)
+	}
+
+	previewTask, err := store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: app.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRenderedTaskManifestContains(t, previewTask, "deepseek-v4-flash-sglang", "namespace: tenant-a", "dynamo.sglang", "path: \"/data/cache/hub\"")
+
+	applyTask, err := store.CreateApplyTask(CreateApplyTaskRequest{ServingApplicationID: app.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applyTask.Type != TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash-sglang" || applyTask.Payload["endpointName"] != "deepseek-v4-flash-sglang" {
+		t.Fatalf("unexpected apply task: %+v", applyTask)
+	}
+	assertRenderedTaskManifestContains(t, applyTask, "deepseek-v4-flash-sglang", "/models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1")
+	updatedApp, err := store.GetServingApplication(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedApp.Phase != ServingApplicationPhaseApplying {
+		t.Fatalf("expected app phase Applying, got %+v", updatedApp)
+	}
+}
+
+func assertRenderedTaskManifestContains(t *testing.T, task Task, substrings ...string) {
+	t.Helper()
+	manifests, ok := task.Payload["manifests"].([]any)
+	if !ok || len(manifests) != 1 {
+		t.Fatalf("unexpected manifests payload: %+v", task.Payload)
+	}
+	manifest, ok := manifests[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected manifest payload: %+v", manifests[0])
+	}
+	content, ok := manifest["content"].(string)
+	if !ok {
+		t.Fatalf("unexpected manifest content: %+v", manifest)
+	}
+	for _, substring := range substrings {
+		if !strings.Contains(content, substring) {
+			t.Fatalf("expected rendered manifest to contain %q", substring)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package management
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,6 +49,27 @@ func TestRecipeRegistryValidateIntent(t *testing.T) {
 	}
 }
 
+func TestRecipeRegistryRejectsInvalidIntent(t *testing.T) {
+	registry, err := LoadRecipeRegistry("config/recipes", "")
+	if err != nil {
+		t.Fatalf("load recipes: %v", err)
+	}
+	artifact := ModelArtifact{Family: "deepseek-v4", Variant: "flash", Quantization: "fp8"}
+	request := CreateServingApplicationRequest{
+		Model:   ModelIntent{Family: "deepseek-v4", Variant: "flash", ArtifactID: "artifact-1", Quantization: "fp8"},
+		Runtime: RuntimeIntent{Backend: "vllm", Topology: "pd-disagg", Recipe: "deepseek-v4-flash-sglang-dgd-disagg"},
+	}
+	if _, err := registry.ValidateIntent(request, artifact); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected backend mismatch to be invalid input, got %v", err)
+	}
+
+	request.Runtime = RuntimeIntent{Backend: "sglang", Topology: "pd-disagg", Recipe: "deepseek-v4-flash-sglang-dgd-disagg"}
+	artifact.Quantization = "int4"
+	if _, err := registry.ValidateIntent(request, artifact); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected quantization mismatch to be invalid input, got %v", err)
+	}
+}
+
 func TestRecipeRegistryConfigMapOverride(t *testing.T) {
 	overrideDir := t.TempDir()
 	contents := `apiVersion: inference.zhiliu.dev/v1alpha1
@@ -80,5 +102,13 @@ spec:
 	recipe, ok := registry.Get("deepseek-v4-flash-vllm-dgd-disagg")
 	if !ok || recipe.Source != "configmap" || recipe.Spec.Support.Status != RecipeSupportStatusBlocked {
 		t.Fatalf("expected configmap override, got %+v", recipe)
+	}
+	artifact := ModelArtifact{Family: "deepseek-v4", Variant: "flash", Quantization: "fp8"}
+	request := CreateServingApplicationRequest{
+		Model:   ModelIntent{Family: "deepseek-v4", Variant: "flash", ArtifactID: "artifact-1", Quantization: "fp8"},
+		Runtime: RuntimeIntent{Backend: "vllm", Topology: "pd-disagg", Recipe: "deepseek-v4-flash-vllm-dgd-disagg"},
+	}
+	if _, err := registry.ValidateIntent(request, artifact); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected blocked override to be invalid input, got %v", err)
 	}
 }
