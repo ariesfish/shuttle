@@ -155,6 +155,15 @@ export interface ObservabilityEntry {
   prometheusQueries: Array<{ name: string; description: string; query: string }>;
 }
 
+export interface AuditRecord {
+  id: string;
+  actor: string;
+  action: string;
+  resource: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 export function getApiSettings() {
@@ -218,4 +227,5 @@ export const api = {
   listTasks: () => request<Task[]>('/v1/tasks'),
   listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/serving-applications/${appId}/observability`),
+  listAuditRecords: () => request<AuditRecord[]>('/v1/audit-records'),
 };

@@ -6,6 +6,8 @@ import { ClustersPage } from './ClustersPage';
 import { ProjectsPage } from './ProjectsPage';
 import { ArtifactsPage } from './ArtifactsPage';
 import { ServingAppsPage } from './ServingAppsPage';
+import { TasksPage } from './TasksPage';
+import { AuditPage } from './AuditPage';
 import { getApiSettings, saveApiSettings } from './api';
 
 type Page = 'clusters' | 'projects' | 'artifacts' | 'servingApps' | 'tasks' | 'audit';
@@ -94,7 +96,9 @@ function AppContent() {
         {page === 'projects' ? <ProjectsPage /> : null}
         {page === 'artifacts' ? <ArtifactsPage /> : null}
         {page === 'servingApps' ? <ServingAppsPage /> : null}
-        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' && page !== 'servingApps' ? <Placeholder title={t(pageKeys[page])} /> : null}
+        {page === 'tasks' ? <TasksPage /> : null}
+        {page === 'audit' ? <AuditPage /> : null}
+        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' && page !== 'servingApps' && page !== 'tasks' && page !== 'audit' ? <Placeholder title={t(pageKeys[page])} /> : null}
       </main>
     </div>
   );
