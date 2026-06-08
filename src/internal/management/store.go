@@ -535,7 +535,45 @@ func (s *FileStore) CompleteTask(taskID string, req CompleteTaskRequest) (Task, 
 	task.Error = strings.TrimSpace(req.Error)
 	task.UpdatedAt = now
 	s.data.Tasks[task.ID] = task
+	s.updateServingApplicationPhaseForTaskLocked(task)
 	return task, s.saveLocked()
+}
+
+func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
+	appID, _ := task.Payload["servingApplicationId"].(string)
+	if strings.TrimSpace(appID) == "" {
+		return
+	}
+	app, ok := s.data.ServingApplications[appID]
+	if !ok {
+		return
+	}
+
+	if task.Status == TaskStatusFailed {
+		app.Phase = ServingApplicationPhaseFailed
+		app.UpdatedAt = s.now().UTC()
+		s.data.ServingApplications[app.ID] = app
+		return
+	}
+	if task.Status != TaskStatusSucceeded {
+		return
+	}
+
+	switch task.Type {
+	case TaskTypePreviewDeploymentDiff:
+		app.Phase = ServingApplicationPhaseValidated
+	case TaskTypeApplyDeployment, TaskTypeDeleteBeforeApply:
+		app.Phase = ServingApplicationPhaseReady
+		if phase, _ := task.Result["phase"].(string); strings.EqualFold(phase, "failed") || strings.EqualFold(phase, "error") {
+			app.Phase = ServingApplicationPhaseFailed
+		}
+	case TaskTypeRetireDeployment:
+		app.Phase = ServingApplicationPhaseRetired
+	default:
+		return
+	}
+	app.UpdatedAt = s.now().UTC()
+	s.data.ServingApplications[app.ID] = app
 }
 
 func (s *FileStore) sortedTasksLocked() []Task {

@@ -226,6 +226,7 @@ type KubectlResourceDeleter struct {
 	KubectlPath string
 	Timeout     time.Duration
 	Interval    time.Duration
+	LabelKey    string
 }
 
 func (r KubectlDryRunner) ServerSideDryRun(ctx context.Context, manifests []Manifest) (DryRunResult, error) {
@@ -329,10 +330,29 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 	if kubectl == "" {
 		kubectl = "kubectl"
 	}
-	deleteCmd := exec.CommandContext(ctx, kubectl, "-n", ref.Namespace, "delete", "dynamographdeployment", ref.Name, "--ignore-not-found", "--wait=true", "--timeout=120s")
-	deleteOut, err := deleteCmd.CombinedOutput()
+	deleteOut, err := runKubectlCombined(ctx, kubectl, "-n", ref.Namespace, "delete", "dynamographdeployment", ref.Name, "--ignore-not-found", "--wait=true", "--timeout=120s")
 	if err != nil {
-		return DeleteResult{}, fmt.Errorf("kubectl delete dynamographdeployment failed: %w: %s", err, strings.TrimSpace(string(deleteOut)))
+		return DeleteResult{}, fmt.Errorf("kubectl delete dynamographdeployment failed: %w: %s", err, strings.TrimSpace(deleteOut))
+	}
+
+	labelKey := d.LabelKey
+	if labelKey == "" {
+		labelKey = "nvidia.com/dynamo-graph-deployment"
+	}
+	selector := labelKey + "=" + ref.Name
+	cleanupMessages := []string{strings.TrimSpace(deleteOut)}
+	for _, cleanup := range []struct {
+		kind    string
+		timeout string
+	}{
+		{kind: "dynamocomponentdeployment", timeout: "60s"},
+		{kind: "pod,deploy,rs,svc", timeout: "60s"},
+	} {
+		out, err := runKubectlCombined(ctx, kubectl, "-n", ref.Namespace, "delete", cleanup.kind, "-l", selector, "--ignore-not-found", "--wait=true", "--timeout="+cleanup.timeout)
+		cleanupMessages = append(cleanupMessages, strings.TrimSpace(out))
+		if err != nil {
+			return DeleteResult{}, fmt.Errorf("kubectl delete %s by label failed: %w: %s", cleanup.kind, err, strings.TrimSpace(out))
+		}
 	}
 
 	timeout := d.Timeout
@@ -348,13 +368,12 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		getCmd := exec.CommandContext(waitCtx, kubectl, "-n", ref.Namespace, "get", "dynamographdeployment", ref.Name)
-		getOut, err := getCmd.CombinedOutput()
-		if err != nil && (strings.Contains(string(getOut), "NotFound") || strings.Contains(string(getOut), "not found")) {
-			return DeleteResult{Deleted: true, Message: strings.TrimSpace(string(deleteOut))}, nil
+		getOut, err := runKubectlCombined(waitCtx, kubectl, "-n", ref.Namespace, "get", "dynamographdeployment", ref.Name)
+		if err != nil && (strings.Contains(getOut, "NotFound") || strings.Contains(getOut, "not found")) {
+			return DeleteResult{Deleted: true, Message: strings.Join(nonEmptyStrings(cleanupMessages), "\n")}, nil
 		}
 		if err != nil {
-			return DeleteResult{}, fmt.Errorf("kubectl get dynamographdeployment during delete wait failed: %w: %s", err, strings.TrimSpace(string(getOut)))
+			return DeleteResult{}, fmt.Errorf("kubectl get dynamographdeployment during delete wait failed: %w: %s", err, strings.TrimSpace(getOut))
 		}
 		select {
 		case <-waitCtx.Done():
@@ -418,6 +437,23 @@ func manifestsFromPayload(payload map[string]any) ([]Manifest, error) {
 		manifests = append(manifests, Manifest{Name: name, Content: content})
 	}
 	return manifests, nil
+}
+
+func runKubectlCombined(ctx context.Context, kubectl string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, kubectl, args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func nonEmptyStrings(values []string) []string {
+	output := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			output = append(output, value)
+		}
+	}
+	return output
 }
 
 func resourceRefFromPayload(payload map[string]any) (ResourceRef, error) {

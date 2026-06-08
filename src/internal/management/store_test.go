@@ -204,6 +204,75 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if retiringApp.Phase != ServingApplicationPhaseRetiring {
 		t.Fatalf("expected app phase Retiring, got %+v", retiringApp)
 	}
+
+	_, err = store.CompleteTask(task.ID, CompleteTaskRequest{AgentID: "agent-1", Status: TaskStatusSucceeded})
+	if !errors.Is(err, ErrTaskLeaseHeld) {
+		t.Fatalf("expected lease owner check, got %v", err)
+	}
+
+	agent, err := store.RegisterAgent(RegisterAgentRequest{ClusterID: cluster.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leasedPreview, err := forceLeaseTask(store, cluster.ID, task.ID, agent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CompleteTask(leasedPreview.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatedApp, err := store.GetServingApplication(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validatedApp.Phase != ServingApplicationPhaseValidated {
+		t.Fatalf("expected app phase Validated, got %+v", validatedApp)
+	}
+
+	leasedApply, err := forceLeaseTask(store, cluster.ID, applyTask.ID, agent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CompleteTask(leasedApply.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"phase": "Ready"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyApp, err := store.GetServingApplication(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readyApp.Phase != ServingApplicationPhaseReady {
+		t.Fatalf("expected app phase Ready, got %+v", readyApp)
+	}
+
+	leasedRetire, err := forceLeaseTask(store, cluster.ID, retireTask.ID, agent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CompleteTask(leasedRetire.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredApp, err := store.GetServingApplication(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retiredApp.Phase != ServingApplicationPhaseRetired {
+		t.Fatalf("expected app phase Retired, got %+v", retiredApp)
+	}
+}
+
+func forceLeaseTask(store *FileStore, clusterID, taskID, agentID string) (Task, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	task := store.data.Tasks[taskID]
+	task.Status = TaskStatusLeased
+	task.LeaseOwner = agentID
+	task.LeaseExpiresAt = store.now().UTC().Add(time.Minute)
+	task.UpdatedAt = store.now().UTC()
+	store.data.Tasks[taskID] = task
+	return task, nil
 }
 
 func TestTaskTypeWhitelist(t *testing.T) {
