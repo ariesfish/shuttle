@@ -7,22 +7,46 @@ import (
 	"testing"
 
 	"inference-platform/internal/management"
+	platformtask "inference-platform/internal/task"
 )
+
+func renderedTaskPayload(t *testing.T, taskType management.TaskType) map[string]any {
+	t.Helper()
+	envelope, err := platformtask.BuildRenderedDeploymentTask(platformtask.RenderedDeploymentTaskInput{
+		Type:                 platformtask.Type(taskType),
+		ServingApplicationID: "app-1",
+		ClusterID:            "cluster-1",
+		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
+		Endpoint:             platformtask.EndpointIntent{Name: "deepseek-v4-flash", Protocol: "openai-compatible", Exposure: "cluster-local"},
+		Manifests:            []platformtask.Manifest{{Name: "dgd.yaml", Content: "kind: DynamoGraphDeployment\n"}},
+	})
+	if err != nil {
+		t.Fatalf("build rendered task payload: %v", err)
+	}
+	return platformtask.EncodePayload(envelope.Payload)
+}
+
+func resourceTaskPayload(t *testing.T, taskType management.TaskType) map[string]any {
+	t.Helper()
+	envelope, err := platformtask.BuildResourceTask(platformtask.ResourceTaskInput{
+		Type:                 platformtask.Type(taskType),
+		ServingApplicationID: "app-1",
+		ClusterID:            "cluster-1",
+		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
+	})
+	if err != nil {
+		t.Fatalf("build resource task payload: %v", err)
+	}
+	return platformtask.EncodePayload(envelope.Payload)
+}
 
 func TestTaskExecutorPreviewDeploymentDiff(t *testing.T) {
 	dryRunner := &fakeDryRunner{result: DryRunResult{Stdout: "kind: List\n", Stderr: "warning"}}
 	executor := NewTaskExecutor(dryRunner)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypePreviewDeploymentDiff,
-		Payload: map[string]any{
-			"manifests": []any{
-				map[string]any{
-					"name":    "deepseek.yaml",
-					"content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n",
-				},
-			},
-		},
+		Type:    management.TaskTypePreviewDeploymentDiff,
+		Payload: renderedTaskPayload(t, management.TaskTypePreviewDeploymentDiff),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -41,15 +65,8 @@ func TestTaskExecutorApplyDeployment(t *testing.T) {
 	executor := NewTaskExecutorWithApply(&fakeDryRunner{}, applier, watcher)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypeApplyDeployment,
-		Payload: map[string]any{
-			"resourceName": "deepseek-v4-flash",
-			"namespace":    "dynamo-system",
-			"manifests": []any{map[string]any{
-				"name":    "dgd.yaml",
-				"content": "kind: DynamoGraphDeployment\n",
-			}},
-		},
+		Type:    management.TaskTypeApplyDeployment,
+		Payload: renderedTaskPayload(t, management.TaskTypeApplyDeployment),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -72,15 +89,8 @@ func TestTaskExecutorDeleteBeforeApply(t *testing.T) {
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, applier, watcher, deleter)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypeDeleteBeforeApply,
-		Payload: map[string]any{
-			"resourceName": "deepseek-v4-flash",
-			"namespace":    "dynamo-system",
-			"manifests": []any{map[string]any{
-				"name":    "dgd.yaml",
-				"content": "kind: DynamoGraphDeployment\n",
-			}},
-		},
+		Type:    management.TaskTypeDeleteBeforeApply,
+		Payload: renderedTaskPayload(t, management.TaskTypeDeleteBeforeApply),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -144,11 +154,8 @@ func TestTaskExecutorFetchDiagnostics(t *testing.T) {
 	executor.diagnostics = &fakeDiagnosticsCollector{result: DiagnosticsResult{Sections: []DiagnosticsSection{{Name: "pods", Output: "pod ok"}}}}
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypeFetchDiagnostics,
-		Payload: map[string]any{
-			"resourceName": "deepseek-v4-flash",
-			"namespace":    "dynamo-system",
-		},
+		Type:    management.TaskTypeFetchDiagnostics,
+		Payload: resourceTaskPayload(t, management.TaskTypeFetchDiagnostics),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -199,11 +206,8 @@ func TestTaskExecutorRetireDeployment(t *testing.T) {
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
 
 	result, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypeRetireDeployment,
-		Payload: map[string]any{
-			"resourceName": "deepseek-v4-flash",
-			"namespace":    "dynamo-system",
-		},
+		Type:    management.TaskTypeRetireDeployment,
+		Payload: resourceTaskPayload(t, management.TaskTypeRetireDeployment),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -235,10 +239,8 @@ func TestTaskExecutorNoopForOtherTasks(t *testing.T) {
 func TestTaskExecutorPropagatesDryRunError(t *testing.T) {
 	executor := NewTaskExecutor(&fakeDryRunner{err: errors.New("dry-run failed")})
 	_, err := executor.Execute(context.Background(), management.Task{
-		Type: management.TaskTypePreviewDeploymentDiff,
-		Payload: map[string]any{
-			"manifests": []any{map[string]any{"content": "kind: ConfigMap\n"}},
-		},
+		Type:    management.TaskTypePreviewDeploymentDiff,
+		Payload: renderedTaskPayload(t, management.TaskTypePreviewDeploymentDiff),
 	})
 	if err == nil {
 		t.Fatal("expected error")

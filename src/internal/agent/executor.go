@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"inference-platform/internal/management"
+	platformtask "inference-platform/internal/task"
 )
 
 type Executor interface {
@@ -53,24 +54,29 @@ func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier Manifest
 }
 
 func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (map[string]any, error) {
-	resourceRef, _ := resourceRefFromPayload(task.Payload)
-	if resourceRef.Name == "" {
-		resourceRef.Name = "fake-resource"
-	}
-	if resourceRef.Namespace == "" {
-		resourceRef.Namespace = "default"
-	}
 	switch task.Type {
-	case management.TaskTypePreviewDeploymentDiff:
-		manifests, _ := manifestsFromPayload(task.Payload)
-		return map[string]any{"mode": "fake-server-side-dry-run", "manifestCount": len(manifests), "stdout": "fake dry-run ok", "phase": "Validated"}, nil
-	case management.TaskTypeApplyDeployment:
+	case management.TaskTypePreviewDeploymentDiff, management.TaskTypeApplyDeployment, management.TaskTypeDeleteBeforeApply, management.TaskTypeRetireDeployment, management.TaskTypeFetchDiagnostics:
+	default:
+		return map[string]any{"mode": "fake-noop", "taskType": task.Type}, nil
+	}
+	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	if err != nil {
+		return nil, err
+	}
+	resourceRef := agentResourceRef(payload.Resource())
+	switch value := payload.(type) {
+	case platformtask.RenderedDeploymentPayload:
+		if task.Type == management.TaskTypePreviewDeploymentDiff {
+			return map[string]any{"mode": "fake-server-side-dry-run", "manifestCount": len(value.Manifests()), "stdout": "fake dry-run ok", "phase": "Validated"}, nil
+		}
+		if task.Type == management.TaskTypeDeleteBeforeApply {
+			return map[string]any{"mode": "fake-delete-before-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "deletedBeforeApply": true, "message": "fake redeploy ok"}, nil
+		}
 		return map[string]any{"mode": "fake-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "message": "fake apply ok"}, nil
-	case management.TaskTypeDeleteBeforeApply:
-		return map[string]any{"mode": "fake-delete-before-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "deletedBeforeApply": true, "message": "fake redeploy ok"}, nil
-	case management.TaskTypeRetireDeployment:
-		return map[string]any{"mode": "fake-retire", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "deleted": true, "message": "fake retire ok"}, nil
-	case management.TaskTypeFetchDiagnostics:
+	case platformtask.ResourcePayload:
+		if task.Type == management.TaskTypeRetireDeployment {
+			return map[string]any{"mode": "fake-retire", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "deleted": true, "message": "fake retire ok"}, nil
+		}
 		return map[string]any{"mode": "fake-diagnostics", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "sections": []any{}}, nil
 	default:
 		return map[string]any{"mode": "fake-noop", "taskType": task.Type}, nil
@@ -99,21 +105,61 @@ func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[s
 }
 
 func (e *TaskExecutor) previewDeploymentDiff(ctx context.Context, task management.Task) (map[string]any, error) {
-	manifests, err := manifestsFromPayload(task.Payload)
+	payload, err := renderedDeploymentPayload(task)
 	if err != nil {
 		return nil, err
 	}
+	manifests := agentManifests(payload.Manifests())
 	result, err := e.dryRunner.ServerSideDryRun(ctx, manifests)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"mode":          "server-side-dry-run",
-		"manifestCount": len(manifests),
-		"stdout":        result.Stdout,
-		"stderr":        result.Stderr,
-		"handledAt":     e.now().UTC().Format(time.RFC3339),
-	}, nil
+	return platformtask.EncodeResult(platformtask.PreviewResult{
+		ManifestCount: len(manifests),
+		Stdout:        result.Stdout,
+		Stderr:        result.Stderr,
+		HandledAt:     e.now().UTC(),
+	}), nil
+}
+
+func renderedDeploymentPayload(task management.Task) (platformtask.RenderedDeploymentPayload, error) {
+	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	if err != nil {
+		return platformtask.RenderedDeploymentPayload{}, err
+	}
+	rendered, ok := payload.(platformtask.RenderedDeploymentPayload)
+	if !ok {
+		return platformtask.RenderedDeploymentPayload{}, fmt.Errorf("%w: expected rendered deployment payload", platformtask.ErrInvalidPayload)
+	}
+	return rendered, nil
+}
+
+func resourcePayload(task management.Task) (platformtask.ResourcePayload, error) {
+	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	if err != nil {
+		return platformtask.ResourcePayload{}, err
+	}
+	resource, ok := payload.(platformtask.ResourcePayload)
+	if !ok {
+		return platformtask.ResourcePayload{}, fmt.Errorf("%w: expected resource payload", platformtask.ErrInvalidPayload)
+	}
+	return resource, nil
+}
+
+func agentManifests(manifests []platformtask.Manifest) []Manifest {
+	output := make([]Manifest, 0, len(manifests))
+	for _, manifest := range manifests {
+		output = append(output, Manifest{Name: manifest.Name, Content: manifest.Content})
+	}
+	return output
+}
+
+func agentResourceRef(ref platformtask.ResourceRef) ResourceRef {
+	return ResourceRef{Name: ref.Name, Namespace: ref.Namespace}
+}
+
+func taskResourceRef(ref ResourceRef) platformtask.ResourceRef {
+	return platformtask.ResourceRef{Name: ref.Name, Namespace: ref.Namespace}
 }
 
 type Manifest struct {
@@ -127,57 +173,50 @@ type DryRunResult struct {
 }
 
 func (e *TaskExecutor) applyDeployment(ctx context.Context, task management.Task) (map[string]any, error) {
-	manifests, err := manifestsFromPayload(task.Payload)
+	payload, err := renderedDeploymentPayload(task)
 	if err != nil {
 		return nil, err
 	}
-	resourceRef, err := resourceRefFromPayload(task.Payload)
-	if err != nil {
-		return nil, err
-	}
-	return e.applyAndWatch(ctx, manifests, resourceRef, "apply-and-watch", nil)
+	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), agentResourceRef(payload.Resource()), platformtask.TypeApplyDeployment, nil)
 }
 
 func (e *TaskExecutor) deleteBeforeApply(ctx context.Context, task management.Task) (map[string]any, error) {
-	manifests, err := manifestsFromPayload(task.Payload)
+	payload, err := renderedDeploymentPayload(task)
 	if err != nil {
 		return nil, err
 	}
-	resourceRef, err := resourceRefFromPayload(task.Payload)
-	if err != nil {
-		return nil, err
-	}
+	resourceRef := agentResourceRef(payload.Resource())
 	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
-	return e.applyAndWatch(ctx, manifests, resourceRef, "delete-before-apply", &deleteResult)
+	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), resourceRef, platformtask.TypeDeleteBeforeApply, &deleteResult)
 }
 
 func (e *TaskExecutor) retireDeployment(ctx context.Context, task management.Task) (map[string]any, error) {
-	resourceRef, err := resourceRefFromPayload(task.Payload)
+	payload, err := resourcePayload(task)
 	if err != nil {
 		return nil, err
 	}
+	resourceRef := agentResourceRef(payload.Resource())
 	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"mode":      "retire",
-		"resource":  resourceRef.Name,
-		"namespace": resourceRef.Namespace,
-		"deleted":   deleteResult.Deleted,
-		"message":   deleteResult.Message,
-		"handledAt": e.now().UTC().Format(time.RFC3339),
-	}, nil
+	return platformtask.EncodeResult(platformtask.RetireResult{
+		Resource:  payload.Resource(),
+		Deleted:   deleteResult.Deleted,
+		Message:   deleteResult.Message,
+		HandledAt: e.now().UTC(),
+	}), nil
 }
 
 func (e *TaskExecutor) fetchDiagnostics(ctx context.Context, task management.Task) (map[string]any, error) {
-	resourceRef, err := resourceRefFromPayload(task.Payload)
+	payload, err := resourcePayload(task)
 	if err != nil {
 		return nil, err
 	}
+	resourceRef := agentResourceRef(payload.Resource())
 	collector := e.diagnostics
 	if collector == nil {
 		collector = KubectlDiagnosticsCollector{}
@@ -186,24 +225,18 @@ func (e *TaskExecutor) fetchDiagnostics(ctx context.Context, task management.Tas
 	if err != nil {
 		return nil, err
 	}
-	sections := make([]any, 0, len(result.Sections))
+	sections := make([]platformtask.DiagnosticsSection, 0, len(result.Sections))
 	for _, section := range result.Sections {
-		sections = append(sections, map[string]any{
-			"name":   section.Name,
-			"output": section.Output,
-			"error":  section.Error,
-		})
+		sections = append(sections, platformtask.DiagnosticsSection{Name: section.Name, Output: section.Output, Error: section.Error})
 	}
-	return map[string]any{
-		"mode":      "diagnostics",
-		"resource":  resourceRef.Name,
-		"namespace": resourceRef.Namespace,
-		"sections":  sections,
-		"handledAt": e.now().UTC().Format(time.RFC3339),
-	}, nil
+	return platformtask.EncodeResult(platformtask.DiagnosticsResult{
+		Resource:  payload.Resource(),
+		Sections:  sections,
+		HandledAt: e.now().UTC(),
+	}), nil
 }
 
-func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, mode string, deleteResult *DeleteResult) (map[string]any, error) {
+func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, taskType platformtask.Type, deleteResult *DeleteResult) (map[string]any, error) {
 	applyResult, err := e.applier.Apply(ctx, manifests)
 	if err != nil {
 		return nil, err
@@ -212,23 +245,22 @@ func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, 
 	if err != nil {
 		return nil, err
 	}
-	result := map[string]any{
-		"mode":          mode,
-		"manifestCount": len(manifests),
-		"stdout":        applyResult.Stdout,
-		"stderr":        applyResult.Stderr,
-		"resource":      resourceRef.Name,
-		"namespace":     resourceRef.Namespace,
-		"endpointUrl":   endpointURLFromPayload(resourceRef, manifests),
-		"phase":         watchResult.Phase,
-		"message":       watchResult.Message,
-		"handledAt":     e.now().UTC().Format(time.RFC3339),
+	result := platformtask.DeploymentResult{
+		TypeValue:     taskType,
+		ManifestCount: len(manifests),
+		Stdout:        applyResult.Stdout,
+		Stderr:        applyResult.Stderr,
+		Resource:      taskResourceRef(resourceRef),
+		EndpointURL:   endpointURLFromPayload(resourceRef, manifests),
+		Phase:         watchResult.Phase,
+		Message:       watchResult.Message,
+		HandledAt:     e.now().UTC(),
 	}
 	if deleteResult != nil {
-		result["deletedBeforeApply"] = deleteResult.Deleted
-		result["deleteMessage"] = deleteResult.Message
+		result.DeletedBeforeApply = deleteResult.Deleted
+		result.DeleteMessage = deleteResult.Message
 	}
-	return result, nil
+	return platformtask.EncodeResult(result), nil
 }
 
 type ManifestDryRunner interface {
@@ -638,31 +670,6 @@ func isTerminalDynamoState(state string) bool {
 	}
 }
 
-func manifestsFromPayload(payload map[string]any) ([]Manifest, error) {
-	rawManifests, ok := payload["manifests"]
-	if !ok {
-		return nil, errors.New("payload.manifests is required")
-	}
-	items, ok := rawManifests.([]any)
-	if !ok {
-		return nil, errors.New("payload.manifests must be an array")
-	}
-	manifests := make([]Manifest, 0, len(items))
-	for index, item := range items {
-		object, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("payload.manifests[%d] must be an object", index)
-		}
-		name, _ := object["name"].(string)
-		content, _ := object["content"].(string)
-		if strings.TrimSpace(content) == "" {
-			return nil, fmt.Errorf("payload.manifests[%d].content is required", index)
-		}
-		manifests = append(manifests, Manifest{Name: name, Content: content})
-	}
-	return manifests, nil
-}
-
 func runKubectlCombined(ctx context.Context, kubectl string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, kubectl, args...)
 	output, err := cmd.CombinedOutput()
@@ -689,15 +696,6 @@ func nonEmptyStrings(values []string) []string {
 
 func endpointURLFromPayload(ref ResourceRef, _ []Manifest) string {
 	return "http://" + ref.Name + "." + ref.Namespace + ".svc.cluster.local:8000/v1"
-}
-
-func resourceRefFromPayload(payload map[string]any) (ResourceRef, error) {
-	name, _ := payload["resourceName"].(string)
-	namespace, _ := payload["namespace"].(string)
-	if strings.TrimSpace(name) == "" || strings.TrimSpace(namespace) == "" {
-		return ResourceRef{}, errors.New("payload.resourceName and payload.namespace are required")
-	}
-	return ResourceRef{Name: strings.TrimSpace(name), Namespace: strings.TrimSpace(namespace)}, nil
 }
 
 func writeManifestsToTempDir(manifests []Manifest) (string, error) {

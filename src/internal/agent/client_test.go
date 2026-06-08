@@ -8,7 +8,23 @@ import (
 	"time"
 
 	"inference-platform/internal/management"
+	platformtask "inference-platform/internal/task"
 )
+
+func previewTaskPayload(t *testing.T, clusterID string) map[string]any {
+	t.Helper()
+	envelope, err := platformtask.BuildRenderedDeploymentTask(platformtask.RenderedDeploymentTaskInput{
+		Type:                 platformtask.TypePreviewDeploymentDiff,
+		ServingApplicationID: "app-1",
+		ClusterID:            clusterID,
+		Resource:             platformtask.ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"},
+		Manifests:            []platformtask.Manifest{{Name: "test.yaml", Content: "kind: ConfigMap\n"}},
+	})
+	if err != nil {
+		t.Fatalf("build preview task payload: %v", err)
+	}
+	return platformtask.EncodePayload(envelope.Payload)
+}
 
 func TestClientRegistersLeasesAndCompletesNoopTask(t *testing.T) {
 	store, err := management.NewFileStore("")
@@ -198,9 +214,7 @@ func TestRunnerCompletesPreviewDeploymentDiffTask(t *testing.T) {
 	createdTask, err := store.CreateTask(management.CreateTaskRequest{
 		ClusterID: cluster.ID,
 		Type:      management.TaskTypePreviewDeploymentDiff,
-		Payload: map[string]any{
-			"manifests": []any{map[string]any{"name": "test.yaml", "content": "kind: ConfigMap\n"}},
-		},
+		Payload:   previewTaskPayload(t, cluster.ID),
 	})
 	if err != nil {
 		t.Fatal(err)

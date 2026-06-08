@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	platformtask "inference-platform/internal/task"
 )
 
 var (
@@ -518,14 +520,19 @@ func (s *FileStore) CreateRetireTask(req CreateRetireTaskRequest) (Task, error) 
 	if !ok {
 		return Task{}, ErrNotFound
 	}
+	envelope, err := platformtask.BuildResourceTask(platformtask.ResourceTaskInput{
+		Type:                 platformtask.TypeRetireDeployment,
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Resource:             platformtask.ResourceRef{Name: kubernetesName(app.Name), Namespace: app.Placement.Namespace},
+	})
+	if err != nil {
+		return Task{}, err
+	}
 	task := s.newTaskLocked(CreateTaskRequest{
-		ClusterID: app.Placement.ClusterID,
-		Type:      TaskTypeRetireDeployment,
-		Payload: map[string]any{
-			"servingApplicationId": app.ID,
-			"resourceName":         kubernetesName(app.Name),
-			"namespace":            app.Placement.Namespace,
-		},
+		ClusterID: envelope.ClusterID,
+		Type:      TaskType(envelope.Type),
+		Payload:   platformtask.EncodePayload(envelope.Payload),
 	})
 	s.setServingApplicationPhaseLocked(req.ServingApplicationID, "system", task.ID, ServingApplicationPhaseRetiring, "retire task created")
 	s.data.Tasks[task.ID] = task
@@ -544,14 +551,19 @@ func (s *FileStore) CreateDiagnosticsTask(req CreateDiagnosticsTaskRequest) (Tas
 	if resourceName == "" {
 		resourceName = kubernetesName(app.ID)
 	}
+	envelope, err := platformtask.BuildResourceTask(platformtask.ResourceTaskInput{
+		Type:                 platformtask.TypeFetchDiagnostics,
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Resource:             platformtask.ResourceRef{Name: resourceName, Namespace: app.Placement.Namespace},
+	})
+	if err != nil {
+		return Task{}, err
+	}
 	task := s.newTaskLocked(CreateTaskRequest{
-		ClusterID: app.Placement.ClusterID,
-		Type:      TaskTypeFetchDiagnostics,
-		Payload: map[string]any{
-			"servingApplicationId": app.ID,
-			"resourceName":         resourceName,
-			"namespace":            app.Placement.Namespace,
-		},
+		ClusterID: envelope.ClusterID,
+		Type:      TaskType(envelope.Type),
+		Payload:   platformtask.EncodePayload(envelope.Payload),
 	})
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
@@ -604,21 +616,21 @@ func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task
 	if err != nil {
 		return Task{}, err
 	}
+	envelope, err := platformtask.BuildRenderedDeploymentTask(platformtask.RenderedDeploymentTaskInput{
+		Type:                 platformtask.Type(taskType),
+		ServingApplicationID: app.ID,
+		ClusterID:            app.Placement.ClusterID,
+		Resource:             platformtask.ResourceRef{Name: kubernetesName(app.Name), Namespace: app.Placement.Namespace},
+		Endpoint:             platformtask.EndpointIntent{Name: app.Service.EndpointName, Protocol: app.Service.Protocol, Exposure: app.Service.Exposure},
+		Manifests:            []platformtask.Manifest{{Name: manifest.Name, Content: manifest.Content}},
+	})
+	if err != nil {
+		return Task{}, err
+	}
 	return s.newTaskLocked(CreateTaskRequest{
-		ClusterID: app.Placement.ClusterID,
-		Type:      taskType,
-		Payload: map[string]any{
-			"servingApplicationId": app.ID,
-			"resourceName":         kubernetesName(app.Name),
-			"namespace":            app.Placement.Namespace,
-			"endpointName":         app.Service.EndpointName,
-			"protocol":             app.Service.Protocol,
-			"exposure":             app.Service.Exposure,
-			"manifests": []any{map[string]any{
-				"name":    manifest.Name,
-				"content": manifest.Content,
-			}},
-		},
+		ClusterID: envelope.ClusterID,
+		Type:      TaskType(envelope.Type),
+		Payload:   platformtask.EncodePayload(envelope.Payload),
 	}), nil
 }
 
@@ -727,11 +739,11 @@ func (s *FileStore) CompleteTask(taskID string, req CompleteTaskRequest) (Task, 
 }
 
 func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
-	appID, _ := task.Payload["servingApplicationId"].(string)
-	if strings.TrimSpace(appID) == "" {
+	payload, err := platformtask.DecodePayload(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload})
+	if err != nil {
 		return
 	}
-	app, ok := s.data.ServingApplications[appID]
+	app, ok := s.data.ServingApplications[payload.ServingApplicationID()]
 	if !ok {
 		return
 	}
@@ -744,24 +756,30 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 		return
 	}
 
-	switch task.Type {
-	case TaskTypePreviewDeploymentDiff:
+	result, err := platformtask.DecodeResult(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload, Result: task.Result, Error: task.Error})
+	if err != nil {
+		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseFailed, err.Error())
+		return
+	}
+
+	switch value := result.(type) {
+	case platformtask.PreviewResult:
 		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseValidated, "preview succeeded")
-	case TaskTypeApplyDeployment, TaskTypeDeleteBeforeApply:
+	case platformtask.DeploymentResult:
 		phase := ServingApplicationPhaseReady
 		reason := "deployment ready"
-		if resultPhase, _ := task.Result["phase"].(string); strings.EqualFold(resultPhase, "failed") || strings.EqualFold(resultPhase, "error") {
+		if strings.EqualFold(value.Phase, "failed") || strings.EqualFold(value.Phase, "error") {
 			phase = ServingApplicationPhaseFailed
 			reason = taskResultMessage(task)
 		}
 		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, phase, reason)
 		if phase == ServingApplicationPhaseReady {
 			updatedApp := s.data.ServingApplications[app.ID]
-			updatedApp = s.upsertEndpointForTaskLocked(updatedApp, task)
+			updatedApp = s.upsertEndpointForTaskLocked(updatedApp, value)
 			updatedApp.UpdatedAt = s.now().UTC()
 			s.data.ServingApplications[updatedApp.ID] = updatedApp
 		}
-	case TaskTypeRetireDeployment:
+	case platformtask.RetireResult:
 		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseRetired, "retire succeeded")
 		s.removeEndpointForServingApplicationLocked(app.ID)
 	default:
@@ -769,9 +787,9 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 	}
 }
 
-func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, task Task) ServingApplication {
-	endpointURL, _ := task.Result["endpointUrl"].(string)
-	if strings.TrimSpace(endpointURL) == "" {
+func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, result platformtask.DeploymentResult) ServingApplication {
+	endpointURL := strings.TrimSpace(result.EndpointURL)
+	if endpointURL == "" {
 		endpointURL = defaultEndpointURL(app)
 	}
 	ready := app.Phase == ServingApplicationPhaseReady
@@ -866,13 +884,21 @@ func taskFailureReason(task Task) string {
 }
 
 func taskResultMessage(task Task) string {
-	message, _ := task.Result["message"].(string)
-	if strings.TrimSpace(message) != "" {
-		return strings.TrimSpace(message)
-	}
-	phase, _ := task.Result["phase"].(string)
-	if strings.TrimSpace(phase) != "" {
-		return "task result phase: " + strings.TrimSpace(phase)
+	result, err := platformtask.DecodeResult(platformtask.DTO{ID: task.ID, ClusterID: task.ClusterID, Type: platformtask.Type(task.Type), Payload: task.Payload, Result: task.Result, Error: task.Error})
+	if err == nil {
+		switch value := result.(type) {
+		case platformtask.DeploymentResult:
+			if strings.TrimSpace(value.Message) != "" {
+				return strings.TrimSpace(value.Message)
+			}
+			if strings.TrimSpace(value.Phase) != "" {
+				return "task result phase: " + strings.TrimSpace(value.Phase)
+			}
+		case platformtask.RetireResult:
+			if strings.TrimSpace(value.Message) != "" {
+				return strings.TrimSpace(value.Message)
+			}
+		}
 	}
 	return string(task.Type) + " completed"
 }
