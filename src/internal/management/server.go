@@ -56,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/tasks", s.createTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("POST /v1/clusters/{clusterID}/tasks:lease", s.leaseTask)
+	mux.HandleFunc("POST /v1/tasks/{taskID}/lease:renew", s.renewTaskLease)
 	mux.HandleFunc("POST /v1/tasks/{taskID}/complete", s.completeTask)
 	return requestLogger(s.logger, corsMiddleware(s.corsConfig, authMiddleware(s.authConfig, mux)))
 }
@@ -264,6 +265,18 @@ func (s *Server) leaseTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	task, err := s.store.LeaseNextTask(r.PathValue("clusterID"), req, s.leaseTTL)
+	writeResult(w, task, http.StatusOK, err)
+}
+
+func (s *Server) renewTaskLease(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator", "agent") {
+		return
+	}
+	var req RenewTaskLeaseRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	task, err := s.store.RenewTaskLease(r.PathValue("taskID"), req, s.leaseTTL)
 	writeResult(w, task, http.StatusOK, err)
 }
 

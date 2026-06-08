@@ -44,6 +44,7 @@ type Store interface {
 	CreateRetireTask(CreateRetireTaskRequest) (Task, error)
 	ListTasks(clusterID string) ([]Task, error)
 	LeaseNextTask(clusterID string, req LeaseTaskRequest, ttl time.Duration) (Task, error)
+	RenewTaskLease(taskID string, req RenewTaskLeaseRequest, ttl time.Duration) (Task, error)
 	CompleteTask(taskID string, req CompleteTaskRequest) (Task, error)
 }
 
@@ -585,6 +586,28 @@ func (s *FileStore) LeaseNextTask(clusterID string, req LeaseTaskRequest, ttl ti
 	return *selected, s.saveLocked()
 }
 
+func (s *FileStore) RenewTaskLease(taskID string, req RenewTaskLeaseRequest, ttl time.Duration) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, ok := s.data.Tasks[taskID]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	if task.Status == TaskStatusSucceeded || task.Status == TaskStatusFailed {
+		return task, nil
+	}
+	if task.Status != TaskStatusLeased || task.LeaseOwner != req.AgentID {
+		return Task{}, ErrTaskLeaseHeld
+	}
+
+	now := s.now().UTC()
+	task.LeaseExpiresAt = now.Add(ttl)
+	task.UpdatedAt = now
+	s.data.Tasks[task.ID] = task
+	return task, s.saveLocked()
+}
+
 func (s *FileStore) CompleteTask(taskID string, req CompleteTaskRequest) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -593,11 +616,17 @@ func (s *FileStore) CompleteTask(taskID string, req CompleteTaskRequest) (Task, 
 	if !ok {
 		return Task{}, ErrNotFound
 	}
-	if task.LeaseOwner != req.AgentID {
-		return Task{}, ErrTaskLeaseHeld
-	}
 	if req.Status != TaskStatusSucceeded && req.Status != TaskStatusFailed {
 		return Task{}, fmt.Errorf("%w: completion status must be succeeded or failed", ErrInvalidInput)
+	}
+	if task.Status == TaskStatusSucceeded || task.Status == TaskStatusFailed {
+		if task.LeaseOwner == req.AgentID && task.Status == req.Status {
+			return task, nil
+		}
+		return Task{}, ErrTaskLeaseHeld
+	}
+	if task.LeaseOwner != req.AgentID {
+		return Task{}, ErrTaskLeaseHeld
 	}
 
 	now := s.now().UTC()

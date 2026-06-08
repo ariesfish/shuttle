@@ -76,6 +76,75 @@ func TestProjectClusterAgentAndTaskLifecycle(t *testing.T) {
 	}
 }
 
+func TestRenewTaskLeaseExtendsOwnedLease(t *testing.T) {
+	store, err := NewFileStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster, err := store.CreateCluster(CreateClusterRequest{Name: "cluster-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := store.RegisterAgent(RegisterAgentRequest{ClusterID: cluster.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: TaskTypeInspectStatus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.LeaseNextTask(cluster.ID, LeaseTaskRequest{AgentID: agent.ID}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time { return leased.LeaseExpiresAt.Add(-500 * time.Millisecond) }
+	renewed, err := store.RenewTaskLease(createdTask.ID, RenewTaskLeaseRequest{AgentID: agent.ID}, time.Minute)
+	if err != nil {
+		t.Fatalf("renew task lease: %v", err)
+	}
+	if !renewed.LeaseExpiresAt.After(leased.LeaseExpiresAt) || renewed.LeaseOwner != agent.ID || renewed.Status != TaskStatusLeased {
+		t.Fatalf("unexpected renewed task: %+v original=%+v", renewed, leased)
+	}
+}
+
+func TestCompleteTaskIsIdempotentAfterTerminalState(t *testing.T) {
+	store, err := NewFileStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster, err := store.CreateCluster(CreateClusterRequest{Name: "cluster-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := store.RegisterAgent(RegisterAgentRequest{ClusterID: cluster.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdTask, err := store.CreateTask(CreateTaskRequest{ClusterID: cluster.ID, Type: TaskTypeInspectStatus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := store.LeaseNextTask(cluster.ID, LeaseTaskRequest{AgentID: agent.ID}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "first"}})
+	if err != nil {
+		t.Fatalf("first complete: %v", err)
+	}
+	second, err := store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusSucceeded, Result: map[string]any{"attempt": "second"}})
+	if err != nil {
+		t.Fatalf("second complete: %v", err)
+	}
+	if second.Result["attempt"] != "first" || !second.UpdatedAt.Equal(first.UpdatedAt) || leased.ID != second.ID {
+		t.Fatalf("expected idempotent complete to preserve terminal task, first=%+v second=%+v", first, second)
+	}
+	_, err = store.CompleteTask(createdTask.ID, CompleteTaskRequest{AgentID: agent.ID, Status: TaskStatusFailed})
+	if !errors.Is(err, ErrTaskLeaseHeld) {
+		t.Fatalf("expected conflicting terminal complete to fail, got %v", err)
+	}
+}
+
 func TestLeaseRejectsAgentFromAnotherCluster(t *testing.T) {
 	store, err := NewFileStore("")
 	if err != nil {

@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	ManagementURL     string
-	ClusterID         string
-	Version           string
-	Capabilities      map[string]string
-	PollInterval      time.Duration
-	HeartbeatInterval time.Duration
+	ManagementURL      string
+	ClusterID          string
+	Version            string
+	Capabilities       map[string]string
+	PollInterval       time.Duration
+	HeartbeatInterval  time.Duration
+	LeaseRenewInterval time.Duration
 }
 
 type Runner struct {
@@ -40,6 +41,9 @@ func NewRunnerWithExecutor(client *ManagementClient, config Config, logger *slog
 	}
 	if config.HeartbeatInterval == 0 {
 		config.HeartbeatInterval = 30 * time.Second
+	}
+	if config.LeaseRenewInterval == 0 {
+		config.LeaseRenewInterval = 10 * time.Second
 	}
 	return &Runner{client: client, config: config, logger: logger, executor: executor}
 }
@@ -91,7 +95,12 @@ func (r *Runner) pollOnce(ctx context.Context, agent management.ClusterAgent) {
 	}
 
 	r.logger.Info("leased task", "task_id", task.ID, "type", task.Type)
+	renewCtx, stopRenew := context.WithCancel(ctx)
+	doneRenew := make(chan struct{})
+	go r.renewLeaseLoop(renewCtx, agent.ID, task.ID, doneRenew)
 	result, taskErr := r.executor.Execute(ctx, task)
+	stopRenew()
+	<-doneRenew
 	completeReq := management.CompleteTaskRequest{
 		AgentID: agent.ID,
 		Status:  management.TaskStatusSucceeded,
@@ -106,4 +115,26 @@ func (r *Runner) pollOnce(ctx context.Context, agent management.ClusterAgent) {
 		return
 	}
 	r.logger.Info("completed task", "task_id", task.ID, "status", completeReq.Status)
+}
+
+func (r *Runner) renewLeaseLoop(ctx context.Context, agentID string, taskID string, done chan<- struct{}) {
+	defer close(done)
+	interval := r.config.LeaseRenewInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := r.client.RenewTaskLease(ctx, taskID, management.RenewTaskLeaseRequest{AgentID: agentID}); err != nil {
+				r.logger.Error("renew task lease failed", "task_id", taskID, "error", err)
+			} else {
+				r.logger.Debug("renewed task lease", "task_id", taskID)
+			}
+		}
+	}
 }

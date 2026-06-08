@@ -71,6 +71,14 @@ func (c *ManagementClient) LeaseTask(ctx context.Context, clusterID string, req 
 	return task, true, nil
 }
 
+func (c *ManagementClient) RenewTaskLease(ctx context.Context, taskID string, req management.RenewTaskLeaseRequest) (management.Task, error) {
+	var task management.Task
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/tasks/"+taskID+"/lease:renew", req, &task); err != nil {
+		return management.Task{}, err
+	}
+	return task, nil
+}
+
 func (c *ManagementClient) CompleteTask(ctx context.Context, taskID string, req management.CompleteTaskRequest) (management.Task, error) {
 	var task management.Task
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/tasks/"+taskID+"/complete", req, &task); err != nil {

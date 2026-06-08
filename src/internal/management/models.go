@@ -250,6 +250,10 @@ type LeaseTaskRequest struct {
 	AgentID string `json:"agentId"`
 }
 
+type RenewTaskLeaseRequest struct {
+	AgentID string `json:"agentId"`
+}
+
 type CompleteTaskRequest struct {
 	AgentID string         `json:"agentId"`
 	Status  TaskStatus     `json:"status"`
