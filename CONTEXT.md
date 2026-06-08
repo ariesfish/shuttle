@@ -32,6 +32,10 @@ _Avoid_: Model name, Hugging Face repo
 The runtime shape of a Serving Application, such as aggregated serving or prefill-decode disaggregation.
 _Avoid_: Architecture, recipe
 
+**Serving Recipe**:
+A platform-managed serving configuration that binds supported model/runtime/topology combinations to compatibility status and deployment rendering metadata.
+_Avoid_: User template, deployment preset, topology
+
 **Accelerator Pool**:
 A schedulable group of accelerator resources with shared operational characteristics.
 _Avoid_: GPU pool, node group
@@ -48,6 +52,7 @@ _Avoid_: Benchmark result, planner config
 - Each **Inference Cluster** has one **Cluster Agent** trusted by the **Management Plane**.
 - A **Serving Application** runs on exactly one **Inference Cluster** at a time.
 - A **Serving Application** serves one **Model Artifact** using one **Serving Topology**.
+- A **Serving Application** is created from one **Serving Recipe**.
 - A **Serving Application** consumes capacity from one or more **Accelerator Pools**.
 - A **Serving Application** may accumulate many **Optimization Profiles** over its lifetime.
 
