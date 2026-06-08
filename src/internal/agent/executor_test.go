@@ -150,8 +150,8 @@ func TestDynamoGraphDeploymentWatchResultUsesStateAndReadyCondition(t *testing.T
 }
 
 func TestTaskExecutorFetchDiagnostics(t *testing.T) {
-	executor := NewTaskExecutor(&fakeDryRunner{})
-	executor.diagnostics = &fakeDiagnosticsCollector{result: DiagnosticsResult{Sections: []DiagnosticsSection{{Name: "pods", Output: "pod ok"}}}}
+	runtime := NewKubernetesRuntime(&fakeDryRunner{}, nil, nil, nil, &fakeDiagnosticsCollector{result: DiagnosticsResult{Sections: []DiagnosticsSection{{Name: "pods", Output: "pod ok"}}}})
+	executor := NewTaskExecutorWithRuntime(runtime)
 
 	result, err := executor.Execute(context.Background(), management.Task{
 		Type:    platformtask.TaskTypeFetchDiagnostics,

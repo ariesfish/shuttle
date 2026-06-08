@@ -30,6 +30,11 @@ type ClusterRuntime interface {
 }
 
 type TaskExecutor struct {
+	runtime ClusterRuntime
+	now     func() time.Time
+}
+
+type KubernetesRuntime struct {
 	dryRunner   ManifestDryRunner
 	applier     ManifestApplier
 	watcher     ResourceWatcher
@@ -49,6 +54,17 @@ func NewTaskExecutorWithApply(dryRunner ManifestDryRunner, applier ManifestAppli
 }
 
 func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier ManifestApplier, watcher ResourceWatcher, deleter ResourceDeleter) *TaskExecutor {
+	return NewTaskExecutorWithRuntime(NewKubernetesRuntime(dryRunner, applier, watcher, deleter, nil))
+}
+
+func NewTaskExecutorWithRuntime(runtime ClusterRuntime) *TaskExecutor {
+	if runtime == nil {
+		runtime = NewKubernetesRuntime(nil, nil, nil, nil, nil)
+	}
+	return &TaskExecutor{runtime: runtime, now: time.Now}
+}
+
+func NewKubernetesRuntime(dryRunner ManifestDryRunner, applier ManifestApplier, watcher ResourceWatcher, deleter ResourceDeleter, diagnostics DiagnosticsCollector) KubernetesRuntime {
 	if dryRunner == nil {
 		dryRunner = KubectlDryRunner{}
 	}
@@ -61,7 +77,10 @@ func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier Manifest
 	if deleter == nil {
 		deleter = KubectlResourceDeleter{Timeout: 10 * time.Minute, Interval: 5 * time.Second}
 	}
-	return &TaskExecutor{dryRunner: dryRunner, applier: applier, watcher: watcher, deleter: deleter, diagnostics: KubectlDiagnosticsCollector{}, now: time.Now}
+	if diagnostics == nil {
+		diagnostics = KubectlDiagnosticsCollector{}
+	}
+	return KubernetesRuntime{dryRunner: dryRunner, applier: applier, watcher: watcher, deleter: deleter, diagnostics: diagnostics, now: time.Now}
 }
 
 func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (map[string]any, error) {
@@ -93,7 +112,10 @@ func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (
 }
 
 func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[string]any, error) {
-	runtime := e.clusterRuntime()
+	runtime := e.runtime
+	if runtime == nil {
+		runtime = NewKubernetesRuntime(nil, nil, nil, nil, nil)
+	}
 	switch platformtask.PayloadKindFor(platformtask.TaskType(task.Type)) {
 	case platformtask.PayloadKindRenderedDeployment:
 		payload, err := renderedDeploymentPayload(task)
@@ -127,37 +149,9 @@ func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[s
 	}, nil
 }
 
-func (e *TaskExecutor) clusterRuntime() ClusterRuntime {
-	return taskExecutorRuntime{executor: e}
-}
-
-type taskExecutorRuntime struct {
-	executor *TaskExecutor
-}
-
-func (r taskExecutorRuntime) PreviewDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
-	return r.executor.previewDeploymentDiffPayload(ctx, payload)
-}
-
-func (r taskExecutorRuntime) ApplyDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
-	return r.executor.applyDeploymentPayload(ctx, payload)
-}
-
-func (r taskExecutorRuntime) DeleteBeforeApply(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
-	return r.executor.deleteBeforeApplyPayload(ctx, payload)
-}
-
-func (r taskExecutorRuntime) RetireDeployment(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
-	return r.executor.retireDeploymentPayload(ctx, payload)
-}
-
-func (r taskExecutorRuntime) FetchDiagnostics(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
-	return r.executor.fetchDiagnosticsPayload(ctx, payload)
-}
-
-func (e *TaskExecutor) previewDeploymentDiffPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+func (r KubernetesRuntime) PreviewDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
 	manifests := agentManifests(payload.Manifests())
-	result, err := e.dryRunner.ServerSideDryRun(ctx, manifests)
+	result, err := r.dryRunner.ServerSideDryRun(ctx, manifests)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +159,7 @@ func (e *TaskExecutor) previewDeploymentDiffPayload(ctx context.Context, payload
 		ManifestCount: len(manifests),
 		Stdout:        result.Stdout,
 		Stderr:        result.Stderr,
-		HandledAt:     e.now().UTC(),
+		HandledAt:     r.nowUTC(),
 	}), nil
 }
 
@@ -219,22 +213,22 @@ type DryRunResult struct {
 	Stderr string
 }
 
-func (e *TaskExecutor) applyDeploymentPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
-	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), agentResourceRef(payload.Resource()), platformtask.TaskTypeApplyDeployment, nil)
+func (r KubernetesRuntime) ApplyDeployment(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+	return r.applyAndWatch(ctx, agentManifests(payload.Manifests()), agentResourceRef(payload.Resource()), platformtask.TaskTypeApplyDeployment, nil)
 }
 
-func (e *TaskExecutor) deleteBeforeApplyPayload(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
+func (r KubernetesRuntime) DeleteBeforeApply(ctx context.Context, payload platformtask.RenderedDeploymentPayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
-	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
+	deleteResult, err := r.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
-	return e.applyAndWatch(ctx, agentManifests(payload.Manifests()), resourceRef, platformtask.TaskTypeDeleteBeforeApply, &deleteResult)
+	return r.applyAndWatch(ctx, agentManifests(payload.Manifests()), resourceRef, platformtask.TaskTypeDeleteBeforeApply, &deleteResult)
 }
 
-func (e *TaskExecutor) retireDeploymentPayload(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
+func (r KubernetesRuntime) RetireDeployment(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
-	deleteResult, err := e.deleter.DeleteAndWait(ctx, resourceRef)
+	deleteResult, err := r.deleter.DeleteAndWait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
@@ -242,17 +236,13 @@ func (e *TaskExecutor) retireDeploymentPayload(ctx context.Context, payload plat
 		Resource:  payload.Resource(),
 		Deleted:   deleteResult.Deleted,
 		Message:   deleteResult.Message,
-		HandledAt: e.now().UTC(),
+		HandledAt: r.nowUTC(),
 	}), nil
 }
 
-func (e *TaskExecutor) fetchDiagnosticsPayload(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
+func (r KubernetesRuntime) FetchDiagnostics(ctx context.Context, payload platformtask.ResourcePayload) (map[string]any, error) {
 	resourceRef := agentResourceRef(payload.Resource())
-	collector := e.diagnostics
-	if collector == nil {
-		collector = KubectlDiagnosticsCollector{}
-	}
-	result, err := collector.Fetch(ctx, resourceRef)
+	result, err := r.diagnostics.Fetch(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
@@ -263,16 +253,16 @@ func (e *TaskExecutor) fetchDiagnosticsPayload(ctx context.Context, payload plat
 	return platformtask.EncodeResult(platformtask.DiagnosticsResult{
 		Resource:  payload.Resource(),
 		Sections:  sections,
-		HandledAt: e.now().UTC(),
+		HandledAt: r.nowUTC(),
 	}), nil
 }
 
-func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, taskType platformtask.TaskType, deleteResult *DeleteResult) (map[string]any, error) {
-	applyResult, err := e.applier.Apply(ctx, manifests)
+func (r KubernetesRuntime) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, taskType platformtask.TaskType, deleteResult *DeleteResult) (map[string]any, error) {
+	applyResult, err := r.applier.Apply(ctx, manifests)
 	if err != nil {
 		return nil, err
 	}
-	watchResult, err := e.watcher.Wait(ctx, resourceRef)
+	watchResult, err := r.watcher.Wait(ctx, resourceRef)
 	if err != nil {
 		return nil, err
 	}
@@ -285,13 +275,20 @@ func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, 
 		EndpointURL:   endpointURLFromPayload(resourceRef, manifests),
 		Phase:         watchResult.Phase,
 		Message:       watchResult.Message,
-		HandledAt:     e.now().UTC(),
+		HandledAt:     r.nowUTC(),
 	}
 	if deleteResult != nil {
 		result.DeletedBeforeApply = deleteResult.Deleted
 		result.DeleteMessage = deleteResult.Message
 	}
 	return platformtask.EncodeResult(result), nil
+}
+
+func (r KubernetesRuntime) nowUTC() time.Time {
+	if r.now == nil {
+		return time.Now().UTC()
+	}
+	return r.now().UTC()
 }
 
 type ManifestDryRunner interface {
