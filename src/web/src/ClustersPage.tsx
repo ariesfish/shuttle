@@ -8,8 +8,8 @@ export function ClustersPage() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateClusterInput>({ name: '', description: '', prometheusUrl: '', grafanaUrl: '' });
-  const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters });
-  const agents = useQuery({ queryKey: ['agents'], queryFn: api.listAgents });
+  const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters, refetchInterval: 5000 });
+  const agents = useQuery({ queryKey: ['agents'], queryFn: api.listAgents, refetchInterval: 2000 });
   const createCluster = useMutation({
     mutationFn: api.createCluster,
     onSuccess: () => {

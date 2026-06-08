@@ -20,9 +20,9 @@ export function ServingAppsPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters });
   const artifacts = useQuery({ queryKey: ['model-artifacts'], queryFn: api.listModelArtifacts });
-  const apps = useQuery({ queryKey: ['serving-applications'], queryFn: api.listServingApplications });
-  const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks });
-  const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints });
+  const apps = useQuery({ queryKey: ['serving-applications'], queryFn: api.listServingApplications, refetchInterval: 2000 });
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks, refetchInterval: 2000 });
+  const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints, refetchInterval: 2000 });
 
   const [form, setForm] = useState({
     projectId: '',
