@@ -596,7 +596,11 @@ func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task
 	if !ok {
 		return Task{}, fmt.Errorf("%w: model artifact does not exist", ErrInvalidInput)
 	}
-	manifest, err := RenderKnownTemplate(app, artifact)
+	recipe, ok := s.recipes.Get(app.Runtime.Recipe)
+	if !ok {
+		return Task{}, fmt.Errorf("%w: unsupported recipe", ErrInvalidInput)
+	}
+	manifest, err := RenderRecipeTemplate(recipe, app, artifact)
 	if err != nil {
 		return Task{}, err
 	}

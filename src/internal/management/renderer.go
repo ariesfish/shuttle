@@ -12,17 +12,27 @@ type RenderedManifest struct {
 	Content string
 }
 
-const deepSeekV4FlashVLLMDGDDisaggTemplate = "../deployment/examples/deepseek-v4-flash-vllm-dgd-disagg.yaml"
-
 func RenderKnownTemplate(app ServingApplication, artifact ModelArtifact) (RenderedManifest, error) {
-	if app.Model.Family != "deepseek-v4" || app.Model.Variant != "flash" || app.Runtime.Backend != "vllm" || app.Runtime.Topology != "pd-disagg" {
-		return RenderedManifest{}, fmt.Errorf("%w: unsupported serving application template", ErrInvalidInput)
-	}
-	if app.Runtime.Recipe != "deepseek-v4-flash-vllm-dgd-disagg" {
+	registry := MustLoadDefaultRecipeRegistry()
+	recipe, ok := registry.Get(app.Runtime.Recipe)
+	if !ok {
 		return RenderedManifest{}, fmt.Errorf("%w: unsupported recipe", ErrInvalidInput)
 	}
+	return RenderRecipeTemplate(recipe, app, artifact)
+}
 
-	content, err := readTemplate(deepSeekV4FlashVLLMDGDDisaggTemplate)
+func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact ModelArtifact) (RenderedManifest, error) {
+	if recipe.Spec.Template.Renderer != "string-replacement-v1" {
+		return RenderedManifest{}, fmt.Errorf("%w: unsupported recipe renderer", ErrInvalidInput)
+	}
+	if recipe.Metadata.ID != app.Runtime.Recipe {
+		return RenderedManifest{}, fmt.Errorf("%w: recipe does not match serving application", ErrInvalidInput)
+	}
+	if recipe.Spec.Model.Family != app.Model.Family || !containsString(recipe.Spec.Model.Variants, app.Model.Variant) || recipe.Spec.Runtime.Backend != app.Runtime.Backend || recipe.Spec.Runtime.Topology != app.Runtime.Topology {
+		return RenderedManifest{}, fmt.Errorf("%w: recipe does not match serving application template", ErrInvalidInput)
+	}
+
+	content, err := readTemplate(recipe.Spec.Template.Path)
 	if err != nil {
 		return RenderedManifest{}, err
 	}
@@ -56,6 +66,7 @@ func readTemplate(relativePath string) (string, error) {
 		relativePath,
 		filepath.Join("..", relativePath),
 		filepath.Join("..", "..", relativePath),
+		filepath.Join("..", "..", "..", relativePath),
 	}
 	for _, candidate := range candidates {
 		content, err := os.ReadFile(candidate)

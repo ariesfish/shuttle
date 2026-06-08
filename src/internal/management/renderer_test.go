@@ -32,7 +32,15 @@ func TestRenderKnownTemplateForDeepSeekV4Flash(t *testing.T) {
 		HostCachePath: "/data/models/hub",
 	}
 
-	manifest, err := RenderKnownTemplate(app, artifact)
+	registry, err := LoadRecipeRegistry("config/recipes", "")
+	if err != nil {
+		t.Fatalf("load recipes: %v", err)
+	}
+	recipe, ok := registry.Get(app.Runtime.Recipe)
+	if !ok {
+		t.Fatalf("recipe not found")
+	}
+	manifest, err := RenderRecipeTemplate(recipe, app, artifact)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
