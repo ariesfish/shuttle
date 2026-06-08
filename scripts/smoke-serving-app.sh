@@ -30,8 +30,8 @@ mkdir -p "${SMOKE_DIR}"
 
 delete_workload() {
   kubectl delete dynamographdeployment -n "${NAMESPACE}" "${ENDPOINT_NAME}" --ignore-not-found --wait=true --timeout=120s >/dev/null 2>&1 || true
-  kubectl delete dynamocomponentdeployment -n "${NAMESPACE}" -l "inference.aistudio.dev/serving-application=${ENDPOINT_NAME}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
-  kubectl delete pod,deploy,rs,svc -n "${NAMESPACE}" -l "inference.aistudio.dev/serving-application=${ENDPOINT_NAME}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
+  kubectl delete dynamocomponentdeployment -n "${NAMESPACE}" -l "inference.zhiliu.dev/serving-application=${ENDPOINT_NAME}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
+  kubectl delete pod,deploy,rs,svc -n "${NAMESPACE}" -l "inference.zhiliu.dev/serving-application=${ENDPOINT_NAME}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
 }
 
 cleanup() {

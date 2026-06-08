@@ -50,7 +50,7 @@ func TestRecipeRegistryValidateIntent(t *testing.T) {
 
 func TestRecipeRegistryConfigMapOverride(t *testing.T) {
 	overrideDir := t.TempDir()
-	contents := `apiVersion: inference.aistudio.dev/v1alpha1
+	contents := `apiVersion: inference.zhiliu.dev/v1alpha1
 kind: ServingRecipe
 metadata:
   id: deepseek-v4-flash-vllm-dgd-disagg

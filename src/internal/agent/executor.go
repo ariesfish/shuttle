@@ -392,7 +392,7 @@ func (c KubectlDiagnosticsCollector) Fetch(ctx context.Context, ref ResourceRef)
 	if maxBytes <= 0 {
 		maxBytes = 16 * 1024
 	}
-	selector := "inference.aistudio.dev/serving-application=" + ref.Name
+	selector := "inference.zhiliu.dev/serving-application=" + ref.Name
 	dynamoSelector := "nvidia.com/dynamo-graph-deployment-name=" + ref.Name
 	commands := []struct {
 		name string
@@ -517,7 +517,7 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 
 	labelKey := d.LabelKey
 	if labelKey == "" {
-		labelKey = "inference.aistudio.dev/serving-application"
+		labelKey = "inference.zhiliu.dev/serving-application"
 	}
 	selector := labelKey + "=" + ref.Name
 	cleanupMessages := []string{strings.TrimSpace(deleteOut)}

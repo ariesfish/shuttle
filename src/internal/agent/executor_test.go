@@ -114,8 +114,8 @@ func TestKubectlResourceDeleterUsesExactFallbackAfterLabelCleanup(t *testing.T) 
 	if !result.Deleted {
 		t.Fatalf("expected deleted result: %+v", result)
 	}
-	assertKubectlCall(t, calls, "delete dynamocomponentdeployment -l inference.aistudio.dev/serving-application=deepseek-v4-flash")
-	assertKubectlCall(t, calls, "delete pod,deploy,rs,svc -l inference.aistudio.dev/serving-application=deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete dynamocomponentdeployment -l inference.zhiliu.dev/serving-application=deepseek-v4-flash")
+	assertKubectlCall(t, calls, "delete pod,deploy,rs,svc -l inference.zhiliu.dev/serving-application=deepseek-v4-flash")
 	assertKubectlCall(t, calls, "delete dynamocomponentdeployment deepseek-v4-flash")
 	assertKubectlCall(t, calls, "delete deploy deepseek-v4-flash")
 	assertKubectlCall(t, calls, "delete rs deepseek-v4-flash")
@@ -187,9 +187,9 @@ func TestKubectlDiagnosticsCollectorUsesBoundedCommands(t *testing.T) {
 		t.Fatalf("expected bounded output and previous-log section error, got %+v", result.Sections)
 	}
 	assertKubectlCall(t, calls, "get dynamographdeployment deepseek-v4-flash -o yaml")
-	assertKubectlCall(t, calls, "get pod -l inference.aistudio.dev/serving-application=deepseek-v4-flash -o wide")
+	assertKubectlCall(t, calls, "get pod -l inference.zhiliu.dev/serving-application=deepseek-v4-flash -o wide")
 	assertKubectlCall(t, calls, "get pod -l nvidia.com/dynamo-graph-deployment-name=deepseek-v4-flash -o wide")
-	assertKubectlCall(t, calls, "logs -l inference.aistudio.dev/serving-application=deepseek-v4-flash --all-containers=true --tail 50")
+	assertKubectlCall(t, calls, "logs -l inference.zhiliu.dev/serving-application=deepseek-v4-flash --all-containers=true --tail 50")
 	assertKubectlCall(t, calls, "logs deepseek-v4-flash-abc --all-containers=true --tail 50")
 	assertKubectlCall(t, calls, "logs deepseek-v4-flash-abc --all-containers=true --previous --tail 50")
 }

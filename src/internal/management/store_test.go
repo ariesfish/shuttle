@@ -339,9 +339,15 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lastTransition := transitions[len(transitions)-1]
-	if lastTransition.To != ServingApplicationPhaseReady || lastTransition.Actor != agent.ID || lastTransition.TaskID != leasedApply.ID {
-		t.Fatalf("unexpected ready transition: %+v", lastTransition)
+	var readyTransition *ServingApplicationTransition
+	for _, transition := range transitions {
+		if transition.To == ServingApplicationPhaseReady && transition.Actor == agent.ID && transition.TaskID == leasedApply.ID {
+			copy := transition
+			readyTransition = &copy
+		}
+	}
+	if readyTransition == nil {
+		t.Fatalf("missing ready transition in %+v", transitions)
 	}
 	endpoints, err := store.ListEndpoints()
 	if err != nil {

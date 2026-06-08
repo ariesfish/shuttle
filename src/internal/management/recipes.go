@@ -175,8 +175,8 @@ func (r *RecipeRegistry) loadDir(dir string, source string) error {
 }
 
 func validateRecipe(recipe ServingRecipe) error {
-	if recipe.APIVersion != "inference.aistudio.dev/v1alpha1" || recipe.Kind != "ServingRecipe" {
-		return fmt.Errorf("apiVersion and kind must be inference.aistudio.dev/v1alpha1 ServingRecipe")
+	if recipe.APIVersion != "inference.zhiliu.dev/v1alpha1" || recipe.Kind != "ServingRecipe" {
+		return fmt.Errorf("apiVersion and kind must be inference.zhiliu.dev/v1alpha1 ServingRecipe")
 	}
 	if strings.TrimSpace(recipe.Metadata.ID) == "" || strings.TrimSpace(recipe.Metadata.Name) == "" {
 		return fmt.Errorf("metadata.id and metadata.name are required")

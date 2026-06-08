@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: inference-platform
     app.kubernetes.io/part-of: inference-platform
-    inference.aistudio.dev/serving-application: dsv4-template
+    inference.zhiliu.dev/serving-application: dsv4-template
   name: dsv4-sglang-disagg
   namespace: dynamo-system
 spec:
@@ -17,7 +17,7 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.aistudio.dev/serving-application: dsv4-template
+            inference.zhiliu.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -59,7 +59,7 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.aistudio.dev/serving-application: dsv4-template
+            inference.zhiliu.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -181,7 +181,7 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.aistudio.dev/serving-application: dsv4-template
+            inference.zhiliu.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
