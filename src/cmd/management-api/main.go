@@ -26,7 +26,7 @@ func main() {
 	var store management.Store
 	var err error
 	if *postgresDSN != "" {
-		store, err = management.NewPostgresStore(context.Background(), management.PostgresOptions{DSN: *postgresDSN})
+		store, err = management.NewPostgresJSONStateStore(context.Background(), management.PostgresJSONStateOptions{DSN: *postgresDSN})
 	} else {
 		store, err = management.NewFileStore(*dataPath)
 	}

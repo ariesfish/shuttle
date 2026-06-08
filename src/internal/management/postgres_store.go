@@ -11,18 +11,14 @@ import (
 
 const postgresStateKey = "management-store"
 
-type PostgresOptions struct {
+type PostgresJSONStateOptions struct {
 	DSN string
 }
 
-// NewPostgresStore keeps the Phase 1 Store Interface backed by a single JSON
-// state document in Postgres. It is not a relational Store Adapter; use the
-// explicit name below when adding new callers so the seam is not misleading.
-func NewPostgresStore(ctx context.Context, options PostgresOptions) (*FileStore, error) {
-	return NewPostgresJSONStateStore(ctx, options)
-}
-
-func NewPostgresJSONStateStore(ctx context.Context, options PostgresOptions) (*FileStore, error) {
+// NewPostgresJSONStateStore keeps the Phase 1 Store Interface backed by a
+// single JSON state document in Postgres. It is intentionally not a relational
+// Store Adapter; all Store behavior still lives in FileStore.
+func NewPostgresJSONStateStore(ctx context.Context, options PostgresJSONStateOptions) (*FileStore, error) {
 	db, err := sql.Open("pgx", options.DSN)
 	if err != nil {
 		return nil, err
