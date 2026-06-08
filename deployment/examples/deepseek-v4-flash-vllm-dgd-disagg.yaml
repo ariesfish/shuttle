@@ -204,7 +204,7 @@ spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
           nodeSelector:
-            kubernetes.io/hostname: icv63h7b6
+            kubernetes.io/hostname: icv63h7b6-1-1
           volumes:
             - name: model-cache
               hostPath:
