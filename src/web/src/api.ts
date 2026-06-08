@@ -25,6 +25,42 @@ export interface CreateClusterInput {
   grafanaUrl?: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+}
+
+export interface ModelArtifact {
+  id: string;
+  family: string;
+  variant: string;
+  revision: string;
+  pvcName?: string;
+  pvcMountPath: string;
+  pvcModelPath: string;
+  hostCachePath?: string;
+  quantization: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateModelArtifactInput {
+  family: string;
+  variant: string;
+  revision: string;
+  pvcName?: string;
+  pvcMountPath: string;
+  pvcModelPath: string;
+  hostCachePath?: string;
+  quantization: string;
+}
+
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 export function getApiSettings() {
@@ -66,4 +102,14 @@ export const api = {
     body: JSON.stringify(input),
   }),
   listAgents: () => request<ClusterAgent[]>('/v1/agents'),
+  listProjects: () => request<Project[]>('/v1/projects'),
+  createProject: (input: CreateProjectInput) => request<Project>('/v1/projects', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
+  listModelArtifacts: () => request<ModelArtifact[]>('/v1/model-artifacts'),
+  createModelArtifact: (input: CreateModelArtifactInput) => request<ModelArtifact>('/v1/model-artifacts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
 };

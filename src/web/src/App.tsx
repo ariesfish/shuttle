@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Boxes, ClipboardList, Database, FileClock, FolderKanban, Languages, Rocket } from 'lucide-react';
 import { useI18n } from './i18n';
 import { ClustersPage } from './ClustersPage';
+import { ProjectsPage } from './ProjectsPage';
+import { ArtifactsPage } from './ArtifactsPage';
 import { getApiSettings, saveApiSettings } from './api';
 
 type Page = 'clusters' | 'projects' | 'artifacts' | 'servingApps' | 'tasks' | 'audit';
@@ -87,7 +89,10 @@ function AppContent() {
             </select>
           </div>
         </div>
-        {page === 'clusters' ? <ClustersPage /> : <Placeholder title={t(pageKeys[page])} />}
+        {page === 'clusters' ? <ClustersPage /> : null}
+        {page === 'projects' ? <ProjectsPage /> : null}
+        {page === 'artifacts' ? <ArtifactsPage /> : null}
+        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' ? <Placeholder title={t(pageKeys[page])} /> : null}
       </main>
     </div>
   );
