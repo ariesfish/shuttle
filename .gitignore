@@ -12,3 +12,8 @@ temp/
 *.swp
 *.swo
 *~
+
+# Web dependencies and builds
+node_modules/
+dist/
+*.tsbuildinfo

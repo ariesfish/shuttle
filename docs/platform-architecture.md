@@ -457,7 +457,7 @@ Phase 1 prioritizes the Management Plane and Cluster Agent control loop.
 - Task completion now updates Serving Application phase for preview, apply, redeploy, and retire; richer transition history is still pending.
 - Management API can use JSON-file persistence or Postgres-backed persistence; the current Postgres implementation stores platform state as JSONB and is not yet a normalized relational schema.
 - Static bearer-token auth, role checks, and audit records are implemented as an MVP; production identity provider integration and fine-grained Project RBAC are still pending.
-- Web Console is not implemented yet; Phase 1 frontend stack is React + Vite + TanStack Query + shadcn/ui.
+- Web Console MVP has started with React + Vite + TanStack Query and a shadcn/ui-inspired component style; current page coverage starts with Clusters.
 - Endpoint Registry is implemented for cluster-local service URLs; Observability Entry returns Grafana deep links and Prometheus query templates, but does not query Prometheus yet.
 
 ## Implementation Phases
@@ -547,7 +547,7 @@ Deliverables:
 2. Add production identity provider integration and fine-grained Project RBAC.
 3. Add exact resource-name fallback cleanup when label-based delete-before-apply cleanup is insufficient.
 4. Add optional Prometheus query execution for selected summary metrics.
-5. Add minimal Web Console using React, Vite, TanStack Query, and shadcn/ui after API and Agent control loop stabilize.
+5. Expand the minimal Web Console beyond Clusters to Projects, Model Artifacts, Serving Applications, Tasks, and Audit.
 6. Replace generated service DNS defaults with discovered external cluster-local endpoint URLs when ingress/gateway details are available.
 
 ## Out of Scope for Phase 1
