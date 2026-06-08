@@ -35,6 +35,8 @@ type Store interface {
 	GetServingApplication(string) (ServingApplication, error)
 	ListEndpoints() ([]EndpointRegistryEntry, error)
 	GetObservabilityEntry(string) (ObservabilityEntry, error)
+	ListAuditRecords() ([]AuditRecord, error)
+	RecordAudit(actor, action, resource string, metadata map[string]any) (AuditRecord, error)
 	CreateTask(CreateTaskRequest) (Task, error)
 	CreatePreviewTask(CreatePreviewTaskRequest) (Task, error)
 	CreateApplyTask(CreateApplyTaskRequest) (Task, error)
@@ -46,10 +48,11 @@ type Store interface {
 }
 
 type FileStore struct {
-	mu   sync.Mutex
-	path string
-	data storeData
-	now  func() time.Time
+	mu      sync.Mutex
+	path    string
+	data    storeData
+	now     func() time.Time
+	persist func(storeData) error
 }
 
 type storeData struct {
@@ -60,11 +63,13 @@ type storeData struct {
 	ModelArtifacts      map[string]ModelArtifact         `json:"modelArtifacts"`
 	ServingApplications map[string]ServingApplication    `json:"servingApplications"`
 	Endpoints           map[string]EndpointRegistryEntry `json:"endpoints"`
+	AuditRecords        map[string]AuditRecord           `json:"auditRecords"`
 	Tasks               map[string]Task                  `json:"tasks"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
 	store := &FileStore{path: path, now: time.Now}
+	store.persist = store.persistFile
 	store.data = newStoreData()
 	if err := store.load(); err != nil {
 		return nil, err
@@ -81,6 +86,7 @@ func newStoreData() storeData {
 		ModelArtifacts:      map[string]ModelArtifact{},
 		ServingApplications: map[string]ServingApplication{},
 		Endpoints:           map[string]EndpointRegistryEntry{},
+		AuditRecords:        map[string]AuditRecord{},
 		Tasks:               map[string]Task{},
 	}
 }
@@ -370,6 +376,35 @@ func (s *FileStore) GetObservabilityEntry(appID string) (ObservabilityEntry, err
 		return ObservabilityEntry{}, fmt.Errorf("%w: cluster does not exist", ErrInvalidInput)
 	}
 	return buildObservabilityEntry(app, cluster), nil
+}
+
+func (s *FileStore) ListAuditRecords() ([]AuditRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	records := make([]AuditRecord, 0, len(s.data.AuditRecords))
+	for _, record := range s.data.AuditRecords {
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].CreatedAt.Before(records[j].CreatedAt) })
+	return records, nil
+}
+
+func (s *FileStore) RecordAudit(actor, action, resource string, metadata map[string]any) (AuditRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.now().UTC()
+	record := AuditRecord{
+		ID:        s.nextID("audit"),
+		Actor:     strings.TrimSpace(actor),
+		Action:    strings.TrimSpace(action),
+		Resource:  strings.TrimSpace(resource),
+		Metadata:  cloneAnyMap(metadata),
+		CreatedAt: now,
+	}
+	s.data.AuditRecords[record.ID] = record
+	return record, s.saveLocked()
 }
 
 func (s *FileStore) CreateTask(req CreateTaskRequest) (Task, error) {
@@ -736,41 +771,25 @@ func (s *FileStore) load() error {
 	if err := json.Unmarshal(contents, &s.data); err != nil {
 		return err
 	}
-	if s.data.NextID == 0 {
-		s.data.NextID = 1
-	}
-	if s.data.Projects == nil {
-		s.data.Projects = map[string]Project{}
-	}
-	if s.data.Clusters == nil {
-		s.data.Clusters = map[string]InferenceCluster{}
-	}
-	if s.data.Agents == nil {
-		s.data.Agents = map[string]ClusterAgent{}
-	}
-	if s.data.ModelArtifacts == nil {
-		s.data.ModelArtifacts = map[string]ModelArtifact{}
-	}
-	if s.data.ServingApplications == nil {
-		s.data.ServingApplications = map[string]ServingApplication{}
-	}
-	if s.data.Endpoints == nil {
-		s.data.Endpoints = map[string]EndpointRegistryEntry{}
-	}
-	if s.data.Tasks == nil {
-		s.data.Tasks = map[string]Task{}
-	}
+	normalizeStoreData(&s.data)
 	return nil
 }
 
 func (s *FileStore) saveLocked() error {
+	if s.persist == nil {
+		return nil
+	}
+	return s.persist(s.data)
+}
+
+func (s *FileStore) persistFile(data storeData) error {
 	if s.path == "" {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	contents, err := json.MarshalIndent(s.data, "", "  ")
+	contents, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}

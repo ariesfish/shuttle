@@ -407,8 +407,9 @@ Phase 1 prioritizes the Management Plane and Cluster Agent control loop.
 - Status watch currently polls only the rendered `DynamoGraphDeployment` phase.
 - Delete-before-apply now deletes the main `DynamoGraphDeployment` and attempts label-based cleanup of DCD, Deployment, ReplicaSet, Pod, and Service; exact resource-name fallback cleanup is still pending.
 - Task completion now updates Serving Application phase for preview, apply, redeploy, and retire; richer transition history is still pending.
-- Management API uses JSON-file persistence, not Postgres.
-- Authentication, RBAC, audit, and Web Console are not implemented yet.
+- Management API can use JSON-file persistence or Postgres-backed persistence; the current Postgres implementation stores platform state as JSONB and is not yet a normalized relational schema.
+- Static bearer-token auth, role checks, and audit records are implemented as an MVP; production identity provider integration and fine-grained Project RBAC are still pending.
+- Web Console is not implemented yet.
 - Endpoint Registry is implemented for cluster-local service URLs; Observability Entry returns Grafana deep links and Prometheus query templates, but does not query Prometheus yet.
 
 ## Implementation Phases
@@ -494,8 +495,8 @@ Deliverables:
 
 ## Near-term Next Steps
 
-1. Replace JSON-file persistence with Postgres-backed repositories.
-2. Add authentication, Project RBAC, and audit records.
+1. Normalize the Postgres schema into explicit tables once the API stabilizes.
+2. Add production identity provider integration and fine-grained Project RBAC.
 3. Add exact resource-name fallback cleanup when label-based delete-before-apply cleanup is insufficient.
 4. Add optional Prometheus query execution for selected summary metrics.
 5. Add Web Console minimal pages after API and Agent control loop stabilize.

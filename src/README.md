@@ -7,6 +7,16 @@ This is the Phase 1 API-first skeleton for the Management Plane and Cluster Agen
 ```bash
 cd src
 go run ./cmd/management-api -addr :8080 -data data/management.json
+
+# Or use Postgres-backed persistence:
+go run ./cmd/management-api \
+  -addr :8080 \
+  -postgres-dsn 'postgres://user:pass@localhost:5432/inference?sslmode=disable'
+
+# Enable static bearer-token auth:
+go run ./cmd/management-api \
+  -addr :8080 \
+  -auth-token dev-secret
 ```
 
 ## Run Cluster Agent
@@ -18,6 +28,7 @@ cd src
 go run ./cmd/cluster-agent \
   -management-url http://localhost:8080 \
   -cluster-id cluster-2 \
+  -auth-token dev-secret \
   -capability dynamo=true,backend=vllm
 ```
 
@@ -93,11 +104,12 @@ curl -s -X POST localhost:8080/v1/serving-applications/app-5/retire-task
 
 For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeployment` and waits for it to disappear.
 
-List registered endpoints and observability entry points:
+List registered endpoints, observability entry points, and audit records:
 
 ```bash
 curl -s localhost:8080/v1/endpoints
 curl -s localhost:8080/v1/serving-applications/app-5/observability
+curl -s localhost:8080/v1/audit-records
 ```
 
 Apply/redeploy task completion creates or updates the endpoint registry entry. Retire task completion removes it. Observability entries return Grafana deep links and Prometheus query templates; the Management Plane does not ingest raw metrics.

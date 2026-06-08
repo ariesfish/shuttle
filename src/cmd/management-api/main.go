@@ -17,10 +17,18 @@ import (
 func main() {
 	addr := flag.String("addr", envOrDefault("MANAGEMENT_API_ADDR", ":8080"), "HTTP listen address")
 	dataPath := flag.String("data", envOrDefault("MANAGEMENT_API_DATA", "data/management.json"), "JSON data file path")
+	postgresDSN := flag.String("postgres-dsn", os.Getenv("MANAGEMENT_API_POSTGRES_DSN"), "Postgres DSN; when set, stores state in Postgres")
+	authToken := flag.String("auth-token", os.Getenv("MANAGEMENT_API_AUTH_TOKEN"), "Bearer token for API auth; when empty, auth is disabled")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	store, err := management.NewFileStore(*dataPath)
+	var store management.Store
+	var err error
+	if *postgresDSN != "" {
+		store, err = management.NewPostgresStore(context.Background(), management.PostgresOptions{DSN: *postgresDSN})
+	} else {
+		store, err = management.NewFileStore(*dataPath)
+	}
 	if err != nil {
 		logger.Error("open store", "error", err)
 		os.Exit(1)
@@ -28,7 +36,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           management.NewServer(store, logger).Routes(),
+		Handler:           management.NewServerWithAuth(store, logger, management.AuthConfig{Enabled: *authToken != "", Token: *authToken}).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

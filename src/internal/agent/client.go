@@ -15,6 +15,9 @@ import (
 type ManagementClient struct {
 	baseURL    string
 	httpClient *http.Client
+	token      string
+	actor      string
+	role       string
 }
 
 func NewManagementClient(baseURL string, httpClient *http.Client) *ManagementClient {
@@ -24,7 +27,20 @@ func NewManagementClient(baseURL string, httpClient *http.Client) *ManagementCli
 	return &ManagementClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		httpClient: httpClient,
+		actor:      "cluster-agent",
+		role:       "agent",
 	}
+}
+
+func (c *ManagementClient) WithAuth(token string, actor string, role string) *ManagementClient {
+	c.token = strings.TrimSpace(token)
+	if strings.TrimSpace(actor) != "" {
+		c.actor = strings.TrimSpace(actor)
+	}
+	if strings.TrimSpace(role) != "" {
+		c.role = strings.TrimSpace(role)
+	}
+	return c
 }
 
 func (c *ManagementClient) Register(ctx context.Context, req management.RegisterAgentRequest) (management.ClusterAgent, error) {
@@ -79,6 +95,15 @@ func (c *ManagementClient) doJSON(ctx context.Context, method, path string, requ
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.actor != "" {
+		req.Header.Set("X-Actor", c.actor)
+	}
+	if c.role != "" {
+		req.Header.Set("X-Role", c.role)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

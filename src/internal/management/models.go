@@ -9,6 +9,15 @@ type Project struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+type AuditRecord struct {
+	ID        string         `json:"id"`
+	Actor     string         `json:"actor"`
+	Action    string         `json:"action"`
+	Resource  string         `json:"resource"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
 type InferenceCluster struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`

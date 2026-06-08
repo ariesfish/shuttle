@@ -19,6 +19,7 @@ func main() {
 	managementURL := flag.String("management-url", envOrDefault("AGENT_MANAGEMENT_URL", "http://localhost:8080"), "Management API base URL")
 	clusterID := flag.String("cluster-id", os.Getenv("AGENT_CLUSTER_ID"), "Inference Cluster ID registered in the Management Plane")
 	version := flag.String("version", envOrDefault("AGENT_VERSION", "dev"), "Cluster Agent version")
+	authToken := flag.String("auth-token", os.Getenv("AGENT_AUTH_TOKEN"), "Bearer token for Management API auth")
 	capabilities := flag.String("capability", os.Getenv("AGENT_CAPABILITIES"), "Comma-separated key=value capabilities")
 	pollInterval := flag.Duration("poll-interval", durationEnvOrDefault("AGENT_POLL_INTERVAL", 5*time.Second), "Task polling interval")
 	heartbeatInterval := flag.Duration("heartbeat-interval", durationEnvOrDefault("AGENT_HEARTBEAT_INTERVAL", 30*time.Second), "Heartbeat interval")
@@ -30,7 +31,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	client := agent.NewManagementClient(*managementURL, &http.Client{Timeout: 30 * time.Second})
+	client := agent.NewManagementClient(*managementURL, &http.Client{Timeout: 30 * time.Second}).WithAuth(*authToken, "cluster-agent", "agent")
 	runner := agent.NewRunner(client, agent.Config{
 		ManagementURL:     *managementURL,
 		ClusterID:         strings.TrimSpace(*clusterID),

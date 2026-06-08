@@ -10,16 +10,21 @@ import (
 )
 
 type Server struct {
-	store    Store
-	logger   *slog.Logger
-	leaseTTL time.Duration
+	store      Store
+	logger     *slog.Logger
+	leaseTTL   time.Duration
+	authConfig AuthConfig
 }
 
 func NewServer(store Store, logger *slog.Logger) *Server {
+	return NewServerWithAuth(store, logger, AuthConfig{})
+}
+
+func NewServerWithAuth(store Store, logger *slog.Logger, authConfig AuthConfig) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second}
+	return &Server{store: store, logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -42,11 +47,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/retire-task", s.createRetireTask)
 	mux.HandleFunc("GET /v1/serving-applications/{appID}/observability", s.getObservabilityEntry)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
+	mux.HandleFunc("GET /v1/audit-records", s.listAuditRecords)
 	mux.HandleFunc("POST /v1/tasks", s.createTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
 	mux.HandleFunc("POST /v1/clusters/{clusterID}/tasks:lease", s.leaseTask)
 	mux.HandleFunc("POST /v1/tasks/{taskID}/complete", s.completeTask)
-	return requestLogger(s.logger, mux)
+	return requestLogger(s.logger, authMiddleware(s.authConfig, mux))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -54,11 +60,17 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin") {
+		return
+	}
 	var req CreateProjectRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	project, err := s.store.CreateProject(req)
+	if err == nil {
+		s.audit(r, "create_project", project.ID, map[string]any{"name": project.Name})
+	}
 	writeResult(w, project, http.StatusCreated, err)
 }
 
@@ -68,11 +80,17 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin") {
+		return
+	}
 	var req CreateClusterRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	cluster, err := s.store.CreateCluster(req)
+	if err == nil {
+		s.audit(r, "create_cluster", cluster.ID, map[string]any{"name": cluster.Name})
+	}
 	writeResult(w, cluster, http.StatusCreated, err)
 }
 
@@ -82,11 +100,17 @@ func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerAgent(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "agent") {
+		return
+	}
 	var req RegisterAgentRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	agent, err := s.store.RegisterAgent(req)
+	if err == nil {
+		s.audit(r, "register_agent", agent.ID, map[string]any{"clusterId": agent.ClusterID})
+	}
 	writeResult(w, agent, http.StatusCreated, err)
 }
 
@@ -105,11 +129,17 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createModelArtifact(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	var req CreateModelArtifactRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	artifact, err := s.store.CreateModelArtifact(req)
+	if err == nil {
+		s.audit(r, "create_model_artifact", artifact.ID, map[string]any{"family": artifact.Family, "variant": artifact.Variant})
+	}
 	writeResult(w, artifact, http.StatusCreated, err)
 }
 
@@ -119,11 +149,17 @@ func (s *Server) listModelArtifacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createServingApplication(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	var req CreateServingApplicationRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	app, err := s.store.CreateServingApplication(req)
+	if err == nil {
+		s.audit(r, "create_serving_application", app.ID, map[string]any{"projectId": app.ProjectID, "name": app.Name})
+	}
 	writeResult(w, app, http.StatusCreated, err)
 }
 
@@ -133,22 +169,46 @@ func (s *Server) listServingApplications(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) createPreviewTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	task, err := s.store.CreatePreviewTask(CreatePreviewTaskRequest{ServingApplicationID: r.PathValue("appID")})
+	if err == nil {
+		s.audit(r, "create_preview_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
+	}
 	writeResult(w, task, http.StatusCreated, err)
 }
 
 func (s *Server) createApplyTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	task, err := s.store.CreateApplyTask(CreateApplyTaskRequest{ServingApplicationID: r.PathValue("appID")})
+	if err == nil {
+		s.audit(r, "create_apply_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
+	}
 	writeResult(w, task, http.StatusCreated, err)
 }
 
 func (s *Server) createRedeployTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	task, err := s.store.CreateRedeployTask(CreateRedeployTaskRequest{ServingApplicationID: r.PathValue("appID")})
+	if err == nil {
+		s.audit(r, "create_redeploy_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
+	}
 	writeResult(w, task, http.StatusCreated, err)
 }
 
 func (s *Server) createRetireTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	task, err := s.store.CreateRetireTask(CreateRetireTaskRequest{ServingApplicationID: r.PathValue("appID")})
+	if err == nil {
+		s.audit(r, "create_retire_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
+	}
 	writeResult(w, task, http.StatusCreated, err)
 }
 
@@ -162,12 +222,26 @@ func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, endpoints, http.StatusOK, err)
 }
 
+func (s *Server) listAuditRecords(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin") {
+		return
+	}
+	records, err := s.store.ListAuditRecords()
+	writeResult(w, records, http.StatusOK, err)
+}
+
 func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
 	var req CreateTaskRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	task, err := s.store.CreateTask(req)
+	if err == nil {
+		s.audit(r, "create_task", task.ID, map[string]any{"type": task.Type, "clusterId": task.ClusterID})
+	}
 	writeResult(w, task, http.StatusCreated, err)
 }
 
@@ -177,6 +251,9 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) leaseTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator", "agent") {
+		return
+	}
 	var req LeaseTaskRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -186,12 +263,25 @@ func (s *Server) leaseTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) completeTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator", "agent") {
+		return
+	}
 	var req CompleteTaskRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	task, err := s.store.CompleteTask(r.PathValue("taskID"), req)
+	if err == nil {
+		s.audit(r, "complete_task", task.ID, map[string]any{"status": task.Status, "type": task.Type})
+	}
 	writeResult(w, task, http.StatusOK, err)
+}
+
+func (s *Server) audit(r *http.Request, action string, resource string, metadata map[string]any) {
+	actor := ActorFromContext(r.Context())
+	if _, err := s.store.RecordAudit(actor.Name, action, resource, metadata); err != nil {
+		s.logger.Error("record audit", "error", err, "action", action, "resource", resource)
+	}
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
