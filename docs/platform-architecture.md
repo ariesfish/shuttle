@@ -458,6 +458,7 @@ Phase 1 prioritizes the Management Plane and Cluster Agent control loop.
 - Management API can use JSON-file persistence or Postgres-backed persistence; the current Postgres implementation stores platform state as JSONB and is not yet a normalized relational schema.
 - Static bearer-token auth, role checks, and audit records are implemented as an MVP; production identity provider integration and fine-grained Project RBAC are still pending.
 - Web Console MVP has started with React + Vite + TanStack Query and a shadcn/ui-inspired component style; current page coverage includes Clusters, Projects, Model Artifacts, Serving Applications, Tasks, and Audit.
+- Cluster Agent Kubernetes deployment shape is documented in `docs/cluster-agent-deployment.md` with a starter manifest at `deployment/cluster-agent.yaml`.
 - Endpoint Registry is implemented for cluster-local service URLs; Observability Entry returns Grafana deep links and Prometheus query templates, but does not query Prometheus yet.
 
 ## Implementation Phases
