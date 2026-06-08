@@ -48,9 +48,10 @@ func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact
 	}
 
 	replacements := map[string]string{
-		"name: " + templateResourceName(content): "name: " + resourceName,
-		"namespace: dynamo-system":               "namespace: " + app.Placement.Namespace,
-		"deepseek-ai/DeepSeek-V4-Flash":          modelName,
+		"name: " + templateResourceName(content):                    "name: " + resourceName,
+		"namespace: dynamo-system":                                  "namespace: " + app.Placement.Namespace,
+		"inference.aistudio.dev/serving-application: dsv4-template": "inference.aistudio.dev/serving-application: " + resourceName,
+		"deepseek-ai/DeepSeek-V4-Flash":                             modelName,
 		"/home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136": modelPath,
 		"path: \"/data/cache/hub\"": "path: \"" + hostCachePath + "\"",
 	}

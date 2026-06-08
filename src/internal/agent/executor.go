@@ -392,7 +392,8 @@ func (c KubectlDiagnosticsCollector) Fetch(ctx context.Context, ref ResourceRef)
 	if maxBytes <= 0 {
 		maxBytes = 16 * 1024
 	}
-	selector := "nvidia.com/dynamo-graph-deployment=" + ref.Name
+	selector := "inference.aistudio.dev/serving-application=" + ref.Name
+	dynamoSelector := "nvidia.com/dynamo-graph-deployment-name=" + ref.Name
 	commands := []struct {
 		name string
 		args []string
@@ -401,6 +402,7 @@ func (c KubectlDiagnosticsCollector) Fetch(ctx context.Context, ref ResourceRef)
 		{name: "dynamocomponentdeploymentsByLabel", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", "-l", selector, "-o", "wide"}},
 		{name: "dynamocomponentdeploymentByName", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", ref.Name, "-o", "wide"}},
 		{name: "podsByLabel", args: []string{"-n", ref.Namespace, "get", "pod", "-l", selector, "-o", "wide"}},
+		{name: "podsByDynamoLabel", args: []string{"-n", ref.Namespace, "get", "pod", "-l", dynamoSelector, "-o", "wide"}},
 		{name: "podsByNamePrefix", args: []string{"-n", ref.Namespace, "get", "pod", "-o", "name"}},
 		{name: "events", args: []string{"-n", ref.Namespace, "get", "events", "--sort-by=.lastTimestamp"}},
 		{name: "currentLogsByLabel", args: []string{"-n", ref.Namespace, "logs", "-l", selector, "--all-containers=true", "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true"}},
@@ -515,7 +517,7 @@ func (d KubectlResourceDeleter) DeleteAndWait(ctx context.Context, ref ResourceR
 
 	labelKey := d.LabelKey
 	if labelKey == "" {
-		labelKey = "nvidia.com/dynamo-graph-deployment"
+		labelKey = "inference.aistudio.dev/serving-application"
 	}
 	selector := labelKey + "=" + ref.Name
 	cleanupMessages := []string{strings.TrimSpace(deleteOut)}

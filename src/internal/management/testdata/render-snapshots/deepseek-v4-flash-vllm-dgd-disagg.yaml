@@ -1,6 +1,10 @@
 apiVersion: nvidia.com/v1beta1
 kind: DynamoGraphDeployment
 metadata:
+  labels:
+    app.kubernetes.io/managed-by: inference-platform
+    app.kubernetes.io/part-of: inference-platform
+    inference.aistudio.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
   name: deepseek-v4-flash-vllm-pd-disaggregated
   namespace: tenant-a
 spec:
@@ -10,6 +14,11 @@ spec:
       type: frontend
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
         spec:
           volumes:
             - name: model-cache
@@ -58,6 +67,11 @@ spec:
       type: decode
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -181,6 +195,11 @@ spec:
       type: prefill
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet

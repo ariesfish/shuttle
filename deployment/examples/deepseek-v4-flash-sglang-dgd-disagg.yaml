@@ -1,6 +1,10 @@
 apiVersion: nvidia.com/v1beta1
 kind: DynamoGraphDeployment
 metadata:
+  labels:
+    app.kubernetes.io/managed-by: inference-platform
+    app.kubernetes.io/part-of: inference-platform
+    inference.aistudio.dev/serving-application: dsv4-template
   name: dsv4-sglang-disagg
   namespace: dynamo-system
 spec:
@@ -9,6 +13,11 @@ spec:
       type: frontend
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -46,6 +55,11 @@ spec:
       type: decode
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -163,6 +177,11 @@ spec:
       type: prefill
       replicas: 1
       podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.aistudio.dev/serving-application: dsv4-template
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
