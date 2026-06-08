@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mooncake-master
+  namespace: dynamo-system
+  labels:
+    app.kubernetes.io/name: mooncake-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mooncake-master
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mooncake-master
+    spec:
+      containers:
+        - name: master
+          image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-cuda13-0.5.12.post1
+          command:
+            - /usr/local/lib/python3.12/dist-packages/mooncake/mooncake_master
+          args:
+            - "--enable_http_metadata_server=true"
+            - "--http_metadata_server_host=0.0.0.0"
+            - "--http_metadata_server_port=8080"
+            - "--rpc_address=0.0.0.0"
+            - "--rpc_port=50051"
+            - "--metrics_port=9003"
+            - "--eviction_high_watermark_ratio=0.95"
+            - "--logtostderr=true"
+          ports:
+            - name: grpc
+              containerPort: 50051
+            - name: metadata
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9003
+          securityContext:
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mooncake-master
+  namespace: dynamo-system
+  labels:
+    app.kubernetes.io/name: mooncake-master
+spec:
+  selector:
+    app.kubernetes.io/name: mooncake-master
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+    - name: metadata
+      port: 8080
+      targetPort: metadata
+    - name: metrics
+      port: 9003
+      targetPort: metrics

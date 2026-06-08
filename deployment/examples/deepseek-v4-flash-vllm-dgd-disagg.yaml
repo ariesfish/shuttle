@@ -80,6 +80,10 @@ spec:
               hostPath:
                 path: "/data/dynamo-cache/vllm"
                 type: DirectoryOrCreate
+            - name: kvbm-disk
+              hostPath:
+                path: "/data/dynamo-cache/kvbm-disk"
+                type: DirectoryOrCreate
           containers:
             - command:
                 - "/bin/sh"
@@ -90,7 +94,7 @@ spec:
                     --model /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136 \
                     --served-model-name deepseek-ai/DeepSeek-V4-Flash \
                     --disaggregation-mode decode \
-                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
+                    --kv-transfer-config '{"kv_connector":"DynamoConnector","kv_connector_module_path":"kvbm.vllm_integration.connector","kv_role":"kv_both"}' \
                     --trust-remote-code \
                     --kv-cache-dtype fp8 \
                     --block-size 256 \
@@ -105,7 +109,7 @@ spec:
                     --no-enable-flashinfer-autotune \
                     --max-model-len 100000 \
                     --max-num-seqs 4 \
-                    --gpu-memory-utilization 0.9 \
+                    --gpu-memory-utilization 0.85 \
                     --disable-custom-all-reduce
               image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
               workingDir: "/workspace/examples/backends/vllm"
@@ -155,6 +159,18 @@ spec:
                   value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
                 - name: UCX_IB_ADDR_TYPE
                   value: ib_global
+                # KVBM: L2 (CPU RAM) and L3 (Disk) cache sizes.
+                # Keep L2 >= GPU KV cache and L3 >= L2 to avoid write-through churn.
+                - name: DYN_KVBM_CPU_CACHE_GB
+                  value: '384'
+                - name: DYN_KVBM_DISK_CACHE_GB
+                  value: '384'
+                # DSV4 MLA optimization: rank 0 loads KV blocks, NCCL broadcasts to all ranks
+                - name: DYN_KVBM_NCCL_MLA_MODE
+                  value: 'true'
+                # KVBM leader-worker init timeout (large disk allocation may need more time)
+                - name: DYN_KVBM_LEADER_WORKER_INIT_TIMEOUT_SECS
+                  value: '3600'
               volumeMounts:
                 - mountPath: "/home/dynamo/.cache/huggingface"
                   name: model-cache
@@ -164,6 +180,8 @@ spec:
                   name: triton-cache
                 - mountPath: "/data/dynamo-cache/vllm"
                   name: vllm-cache
+                - mountPath: "/data/dynamo-cache/kvbm-disk"
+                  name: kvbm-disk
               name: main
               envFrom:
                 - secretRef:
@@ -173,7 +191,8 @@ spec:
                   rdma/rdma_shared_device_a: '8'
                   nvidia.com/gpu: '8'
                 requests:
-                  ephemeral-storage: 40Gi
+                  memory: 512Gi
+                  ephemeral-storage: 384Gi
                   rdma/rdma_shared_device_a: '8'
                   nvidia.com/gpu: '8'
       sharedMemorySize: 200Gi
@@ -203,6 +222,10 @@ spec:
               hostPath:
                 path: "/data/dynamo-cache/vllm"
                 type: DirectoryOrCreate
+            - name: kvbm-disk
+              hostPath:
+                path: "/data/dynamo-cache/kvbm-disk"
+                type: DirectoryOrCreate
           containers:
             - command:
                 - "/bin/sh"
@@ -213,7 +236,7 @@ spec:
                     --model /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136 \
                     --served-model-name deepseek-ai/DeepSeek-V4-Flash \
                     --disaggregation-mode prefill \
-                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
+                    --kv-transfer-config '{"kv_connector":"DynamoConnector","kv_connector_module_path":"kvbm.vllm_integration.connector","kv_role":"kv_both"}' \
                     --trust-remote-code \
                     --kv-cache-dtype fp8 \
                     --block-size 256 \
@@ -228,6 +251,7 @@ spec:
                     --no-enable-flashinfer-autotune \
                     --max-model-len 100000 \
                     --max-num-seqs 4 \
+                    --gpu-memory-utilization 0.85 \
               image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
               workingDir: "/workspace/examples/backends/vllm"
               securityContext:
@@ -276,6 +300,18 @@ spec:
                   value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
                 - name: UCX_IB_ADDR_TYPE
                   value: ib_global
+                # KVBM: L2 (CPU RAM) and L3 (Disk) cache sizes.
+                # Keep L2 >= GPU KV cache and L3 >= L2 to avoid write-through churn.
+                - name: DYN_KVBM_CPU_CACHE_GB
+                  value: '384'
+                - name: DYN_KVBM_DISK_CACHE_GB
+                  value: '384'
+                # DSV4 MLA optimization: rank 0 loads KV blocks, NCCL broadcasts to all ranks
+                - name: DYN_KVBM_NCCL_MLA_MODE
+                  value: 'true'
+                # KVBM leader-worker init timeout (large disk allocation may need more time)
+                - name: DYN_KVBM_LEADER_WORKER_INIT_TIMEOUT_SECS
+                  value: '3600'
               volumeMounts:
                 - mountPath: "/home/dynamo/.cache/huggingface"
                   name: model-cache
@@ -285,6 +321,8 @@ spec:
                   name: triton-cache
                 - mountPath: "/data/dynamo-cache/vllm"
                   name: vllm-cache
+                - mountPath: "/data/dynamo-cache/kvbm-disk"
+                  name: kvbm-disk
               name: main
               envFrom:
                 - secretRef:
@@ -294,7 +332,8 @@ spec:
                   rdma/rdma_shared_device_a: '8'
                   nvidia.com/gpu: '8'
                 requests:
-                  ephemeral-storage: 40Gi
+                  memory: 512Gi
+                  ephemeral-storage: 384Gi
                   rdma/rdma_shared_device_a: '8'
                   nvidia.com/gpu: '8'
       sharedMemorySize: 200Gi
