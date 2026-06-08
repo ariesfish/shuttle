@@ -4,6 +4,20 @@
 
 These instructions apply to this repository. Follow them when changing Helm charts, deployment assets, or helper scripts.
 
+## Agent skills
+
+### Issue tracker
+
+Engineering workflow issues and PRDs are tracked as Local Markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage-aware skills use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo: read root `CONTEXT.md`, `docs/adr/`, `docs/platform-architecture.md`, and `docs/prd/` as relevant. See `docs/agents/domain.md`.
+
 ## Helm chart workflow
 
 When working with charts under `charts/`, use the scripts in `scripts/` instead of ad-hoc `helm package` or `helm push` commands.
