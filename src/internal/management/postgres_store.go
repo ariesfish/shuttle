@@ -43,7 +43,7 @@ func NewPostgresStore(ctx context.Context, options PostgresOptions) (*FileStore,
 	}
 	normalizeStoreData(&data)
 
-	store := &FileStore{data: data, now: time.Now}
+	store := &FileStore{data: data, now: time.Now, recipes: MustLoadDefaultRecipeRegistry()}
 	store.persist = func(data storeData) error {
 		contents, err := json.Marshal(data)
 		if err != nil {

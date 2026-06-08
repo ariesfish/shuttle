@@ -44,6 +44,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/agents/{agentID}/heartbeat", s.heartbeatAgent)
 	mux.HandleFunc("POST /v1/model-artifacts", s.createModelArtifact)
 	mux.HandleFunc("GET /v1/model-artifacts", s.listModelArtifacts)
+	mux.HandleFunc("GET /v1/recipes", s.listRecipes)
 	mux.HandleFunc("POST /v1/serving-applications", s.createServingApplication)
 	mux.HandleFunc("GET /v1/serving-applications", s.listServingApplications)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/preview-task", s.createPreviewTask)
@@ -154,6 +155,11 @@ func (s *Server) createModelArtifact(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listModelArtifacts(w http.ResponseWriter, r *http.Request) {
 	artifacts, err := s.store.ListModelArtifacts()
 	writeResult(w, artifacts, http.StatusOK, err)
+}
+
+func (s *Server) listRecipes(w http.ResponseWriter, r *http.Request) {
+	recipes, err := s.store.ListRecipes()
+	writeResult(w, recipes, http.StatusOK, err)
 }
 
 func (s *Server) createServingApplication(w http.ResponseWriter, r *http.Request) {

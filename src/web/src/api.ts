@@ -50,6 +50,21 @@ export interface ModelArtifact {
   updatedAt: string;
 }
 
+export interface ServingRecipe {
+  apiVersion: string;
+  kind: string;
+  metadata: { id: string; name: string; description?: string };
+  spec: {
+    model: { family: string; variants: string[]; quantizations: string[] };
+    runtime: { backend: string; topology: string };
+    support: { status: 'supported' | 'experimental' | 'blocked'; warning?: string; reason?: string };
+    template: { path: string; renderer: string };
+    defaults?: { namespace?: string; protocol?: string; exposure?: string; optimizationTarget?: string; profilingMode?: string };
+  };
+  source?: string;
+  loadedAt?: string;
+}
+
 export interface CreateModelArtifactInput {
   family: string;
   variant: string;
@@ -226,6 +241,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(input),
   }),
+  listRecipes: () => request<ServingRecipe[]>('/v1/recipes'),
   listServingApplications: () => request<ServingApplication[]>('/v1/serving-applications'),
   createServingApplication: (input: CreateServingApplicationInput) => request<ServingApplication>('/v1/serving-applications', {
     method: 'POST',

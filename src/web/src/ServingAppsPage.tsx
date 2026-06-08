@@ -1,13 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type CreateServingApplicationInput, type ServingApplication, type Task } from './api';
+import { api, type CreateServingApplicationInput, type ServingApplication, type ServingRecipe, type Task } from './api';
 import { useI18n } from './i18n';
 
-const defaults = {
+const fallbackDefaults = {
   namespace: 'dynamo-system',
-  backend: 'vllm',
-  topology: 'pd-disagg',
-  recipe: 'deepseek-v4-flash-vllm-dgd-disagg',
   protocol: 'openai-compatible',
   exposure: 'cluster-local',
   optimizationTarget: 'throughput',
@@ -20,6 +17,7 @@ export function ServingAppsPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters });
   const artifacts = useQuery({ queryKey: ['model-artifacts'], queryFn: api.listModelArtifacts });
+  const recipes = useQuery({ queryKey: ['recipes'], queryFn: api.listRecipes });
   const apps = useQuery({ queryKey: ['serving-applications'], queryFn: api.listServingApplications, refetchInterval: 2000 });
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks, refetchInterval: 2000 });
   const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints, refetchInterval: 2000 });
@@ -29,12 +27,18 @@ export function ServingAppsPage() {
     clusterId: '',
     artifactId: '',
     name: 'DeepSeek V4 Flash',
-    namespace: defaults.namespace,
+    namespace: fallbackDefaults.namespace,
     endpointName: 'deepseek-v4-flash',
+    recipeId: '',
   });
   const [selectedAppId, setSelectedAppId] = useState('');
 
   const selectedArtifact = artifacts.data?.find((artifact) => artifact.id === form.artifactId);
+  const matchingRecipes = useMemo(() => {
+    if (!selectedArtifact) return recipes.data ?? [];
+    return (recipes.data ?? []).filter((recipe) => recipe.spec.model.family === selectedArtifact.family && recipe.spec.model.variants.includes(selectedArtifact.variant) && recipe.spec.model.quantizations.includes(selectedArtifact.quantization));
+  }, [recipes.data, selectedArtifact]);
+  const selectedRecipe = matchingRecipes.find((recipe) => recipe.metadata.id === form.recipeId) ?? matchingRecipes[0];
   const createApp = useMutation({
     mutationFn: (input: CreateServingApplicationInput) => api.createServingApplication(input),
     onSuccess: () => {
@@ -44,6 +48,11 @@ export function ServingAppsPage() {
 
   const actionMutation = useMutation({
     mutationFn: async ({ appId, action }: { appId: string; action: 'preview' | 'apply' | 'redeploy' | 'retire' | 'diagnostics' }) => {
+      const app = apps.data?.find((candidate) => candidate.id === appId);
+      const recipe = recipeForApp(recipes.data ?? [], app);
+      if ((action === 'apply' || action === 'redeploy') && recipe?.spec.support.status === 'experimental' && !confirm(`Recipe is experimental: ${recipe.spec.support.warning || recipe.metadata.name}`)) {
+        throw new Error('action cancelled');
+      }
       if (action === 'preview') return api.createPreviewTask(appId);
       if (action === 'apply') return api.createApplyTask(appId);
       if (action === 'redeploy') return api.createRedeployTask(appId);
@@ -80,7 +89,7 @@ export function ServingAppsPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedArtifact) return;
+    if (!selectedArtifact || !selectedRecipe) return;
     createApp.mutate({
       projectId: form.projectId,
       name: form.name,
@@ -95,18 +104,18 @@ export function ServingAppsPage() {
         namespace: form.namespace,
       },
       runtime: {
-        backend: defaults.backend,
-        topology: defaults.topology,
-        recipe: defaults.recipe,
+        backend: selectedRecipe.spec.runtime.backend,
+        topology: selectedRecipe.spec.runtime.topology,
+        recipe: selectedRecipe.metadata.id,
       },
       service: {
         endpointName: form.endpointName,
-        protocol: defaults.protocol,
-        exposure: defaults.exposure,
+        protocol: selectedRecipe.spec.defaults?.protocol || fallbackDefaults.protocol,
+        exposure: selectedRecipe.spec.defaults?.exposure || fallbackDefaults.exposure,
       },
       optimization: {
-        target: defaults.optimizationTarget,
-        profilingMode: defaults.profilingMode,
+        target: selectedRecipe.spec.defaults?.optimizationTarget || fallbackDefaults.optimizationTarget,
+        profilingMode: selectedRecipe.spec.defaults?.profilingMode || fallbackDefaults.profilingMode,
       },
     });
   }
@@ -119,16 +128,18 @@ export function ServingAppsPage() {
         <form className="form" onSubmit={submit}>
           <SelectField label={t('project')} value={form.projectId} onChange={(value) => setForm({ ...form, projectId: value })} options={(projects.data ?? []).map((project) => [project.id, project.name])} />
           <SelectField label={t('cluster')} value={form.clusterId} onChange={(value) => setForm({ ...form, clusterId: value })} options={(clusters.data ?? []).map((cluster) => [cluster.id, cluster.name])} />
-          <SelectField label={t('artifact')} value={form.artifactId} onChange={(value) => setForm({ ...form, artifactId: value })} options={(artifacts.data ?? []).map((artifact) => [artifact.id, `${artifact.family}/${artifact.variant}:${artifact.revision}`])} />
+          <SelectField label={t('artifact')} value={form.artifactId} onChange={(value) => setForm({ ...form, artifactId: value, recipeId: '' })} options={(artifacts.data ?? []).map((artifact) => [artifact.id, `${artifact.family}/${artifact.variant}:${artifact.revision}`])} />
+          <SelectField label={t('recipe')} value={selectedRecipe?.metadata.id || ''} onChange={(value) => setForm({ ...form, recipeId: value })} options={matchingRecipes.map((recipe) => [recipe.metadata.id, `${recipe.metadata.name} (${recipe.spec.support.status})`])} />
+          {selectedRecipe ? <RecipeWarning recipe={selectedRecipe} /> : <p className="muted">No matching recipe for selected artifact.</p>}
           <InputField label={t('name')} value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
           <InputField label={t('namespace')} value={form.namespace} onChange={(value) => setForm({ ...form, namespace: value })} />
           <InputField label={t('endpointName')} value={form.endpointName} onChange={(value) => setForm({ ...form, endpointName: value })} />
           <div className="grid">
-            <span className="badge muted">{t('backend')}: {defaults.backend}</span>
-            <span className="badge muted">{t('topology')}: {defaults.topology}</span>
-            <span className="badge muted">{t('recipe')}: {defaults.recipe}</span>
+            <span className="badge muted">{t('backend')}: {selectedRecipe?.spec.runtime.backend || '-'}</span>
+            <span className="badge muted">{t('topology')}: {selectedRecipe?.spec.runtime.topology || '-'}</span>
+            <span className="badge muted">{t('recipe')}: {selectedRecipe?.metadata.id || '-'}</span>
           </div>
-          <button className="button" disabled={createApp.isPending || !form.projectId || !form.clusterId || !form.artifactId}>{t('createServingApp')}</button>
+          <button className="button" disabled={createApp.isPending || !form.projectId || !form.clusterId || !form.artifactId || !selectedRecipe || selectedRecipe.spec.support.status === 'blocked'}>{t('createServingApp')}</button>
           {createApp.error ? <p className="error">{createApp.error.message}</p> : null}
         </form>
       </section>
@@ -208,6 +219,19 @@ function ServingAppRow({ app, endpoint, selected, onSelect, onAction, disabled }
       </td>
     </tr>
   );
+}
+
+function RecipeWarning({ recipe }: { recipe: ServingRecipe }) {
+  if (recipe.spec.support.status === 'supported') {
+    return <p className="muted">Recipe support: supported.</p>;
+  }
+  const message = recipe.spec.support.warning || recipe.spec.support.reason || 'No support note provided.';
+  return <p className={recipe.spec.support.status === 'blocked' ? 'error' : 'muted'}>Recipe support: {recipe.spec.support.status}. {message}</p>;
+}
+
+function recipeForApp(recipes: ServingRecipe[], app?: ServingApplication) {
+  if (!app) return undefined;
+  return recipes.find((recipe) => recipe.metadata.id === app.runtime.recipe);
 }
 
 function DiagnosticsTask({ task }: { task?: Task }) {

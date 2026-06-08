@@ -30,6 +30,7 @@ type Store interface {
 	CreateModelArtifact(CreateModelArtifactRequest) (ModelArtifact, error)
 	ListModelArtifacts() ([]ModelArtifact, error)
 	GetModelArtifact(string) (ModelArtifact, error)
+	ListRecipes() ([]ServingRecipe, error)
 	CreateServingApplication(CreateServingApplicationRequest) (ServingApplication, error)
 	ListServingApplications() ([]ServingApplication, error)
 	GetServingApplication(string) (ServingApplication, error)
@@ -56,6 +57,7 @@ type FileStore struct {
 	data    storeData
 	now     func() time.Time
 	persist func(storeData) error
+	recipes *RecipeRegistry
 }
 
 type storeData struct {
@@ -72,7 +74,11 @@ type storeData struct {
 }
 
 func NewFileStore(path string) (*FileStore, error) {
-	store := &FileStore{path: path, now: time.Now}
+	return NewFileStoreWithRecipes(path, MustLoadDefaultRecipeRegistry())
+}
+
+func NewFileStoreWithRecipes(path string, recipes *RecipeRegistry) (*FileStore, error) {
+	store := &FileStore{path: path, now: time.Now, recipes: recipes}
 	store.persist = store.persistFile
 	store.data = newStoreData()
 	if err := store.load(); err != nil {
@@ -291,6 +297,10 @@ func (s *FileStore) GetModelArtifact(id string) (ModelArtifact, error) {
 	return artifact, nil
 }
 
+func (s *FileStore) ListRecipes() ([]ServingRecipe, error) {
+	return s.recipes.List(), nil
+}
+
 func (s *FileStore) CreateServingApplication(req CreateServingApplicationRequest) (ServingApplication, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -310,6 +320,9 @@ func (s *FileStore) CreateServingApplication(req CreateServingApplicationRequest
 		return ServingApplication{}, fmt.Errorf("%w: model artifact does not exist", ErrInvalidInput)
 	}
 	if err := validateServingApplicationIntent(req, artifact); err != nil {
+		return ServingApplication{}, err
+	}
+	if _, err := s.recipes.ValidateIntent(req, artifact); err != nil {
 		return ServingApplication{}, err
 	}
 
