@@ -12,12 +12,16 @@ func TestLoadRecipeRegistry(t *testing.T) {
 		t.Fatalf("load recipes: %v", err)
 	}
 	recipes := registry.List()
-	if len(recipes) != 1 {
-		t.Fatalf("expected built-in recipe, got %+v", recipes)
+	if len(recipes) != 2 {
+		t.Fatalf("expected built-in recipes, got %+v", recipes)
 	}
-	recipe := recipes[0]
-	if recipe.Metadata.ID != "deepseek-v4-flash-vllm-dgd-disagg" || recipe.Spec.Support.Status != RecipeSupportStatusExperimental || recipe.Source != "builtin" {
-		t.Fatalf("unexpected recipe: %+v", recipe)
+	vllmRecipe, ok := registry.Get("deepseek-v4-flash-vllm-dgd-disagg")
+	if !ok || vllmRecipe.Spec.Support.Status != RecipeSupportStatusExperimental || vllmRecipe.Source != "builtin" {
+		t.Fatalf("unexpected vLLM recipe: %+v", vllmRecipe)
+	}
+	sglangRecipe, ok := registry.Get("deepseek-v4-flash-sglang-dgd-disagg")
+	if !ok || sglangRecipe.Spec.Support.Status != RecipeSupportStatusSupported || sglangRecipe.Source != "builtin" {
+		t.Fatalf("unexpected SGLang recipe: %+v", sglangRecipe)
 	}
 }
 
@@ -33,6 +37,10 @@ func TestRecipeRegistryValidateIntent(t *testing.T) {
 	}
 	if _, err := registry.ValidateIntent(request, artifact); err != nil {
 		t.Fatalf("validate intent: %v", err)
+	}
+	request.Runtime = RuntimeIntent{Backend: "sglang", Topology: "pd-disagg", Recipe: "deepseek-v4-flash-sglang-dgd-disagg"}
+	if _, err := registry.ValidateIntent(request, artifact); err != nil {
+		t.Fatalf("validate sglang intent: %v", err)
 	}
 	request.Runtime.Recipe = "missing"
 	if _, err := registry.ValidateIntent(request, artifact); err == nil {

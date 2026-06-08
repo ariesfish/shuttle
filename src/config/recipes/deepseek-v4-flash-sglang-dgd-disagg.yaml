@@ -1,0 +1,25 @@
+apiVersion: inference.aistudio.dev/v1alpha1
+kind: ServingRecipe
+metadata:
+  id: deepseek-v4-flash-sglang-dgd-disagg
+  name: DeepSeek V4 Flash SGLang PD Disaggregated
+spec:
+  model:
+    family: deepseek-v4
+    variants: [flash]
+    quantizations: [fp8]
+  runtime:
+    backend: sglang
+    topology: pd-disagg
+  support:
+    status: supported
+    warning: SGLang disaggregated serving is the preferred DeepSeek V4 Flash recipe for Ready smoke.
+  template:
+    path: deployment/examples/deepseek-v4-flash-sglang-dgd-disagg.yaml
+    renderer: string-replacement-v1
+  defaults:
+    namespace: dynamo-system
+    protocol: openai-compatible
+    exposure: cluster-local
+    optimizationTarget: throughput
+    profilingMode: disabled

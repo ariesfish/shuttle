@@ -48,9 +48,9 @@ func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact
 	}
 
 	replacements := map[string]string{
-		"name: dsv4-disagg-dgd":         "name: " + resourceName,
-		"namespace: dynamo-system":      "namespace: " + app.Placement.Namespace,
-		"deepseek-ai/DeepSeek-V4-Flash": modelName,
+		"name: " + templateResourceName(content): "name: " + resourceName,
+		"namespace: dynamo-system":               "namespace: " + app.Placement.Namespace,
+		"deepseek-ai/DeepSeek-V4-Flash":          modelName,
 		"/home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136": modelPath,
 		"path: \"/data/cache/hub\"": "path: \"" + hostCachePath + "\"",
 	}
@@ -59,6 +59,25 @@ func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact
 	}
 
 	return RenderedManifest{Name: resourceName + ".yaml", Content: content}, nil
+}
+
+func templateResourceName(content string) string {
+	lines := strings.Split(content, "\n")
+	inMetadata := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "metadata:" {
+			inMetadata = true
+			continue
+		}
+		if inMetadata && strings.HasPrefix(line, "spec:") {
+			return ""
+		}
+		if inMetadata && strings.HasPrefix(trimmed, "name:") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "name:"))
+		}
+	}
+	return ""
 }
 
 func readTemplate(relativePath string) (string, error) {
