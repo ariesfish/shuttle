@@ -1,0 +1,301 @@
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  name: deepseek-v4-flash-vllm-pd-disaggregated
+  namespace: tenant-a
+spec:
+  backendFramework: vllm
+  components:
+    - name: Frontend
+      type: frontend
+      replicas: 1
+      podTemplate:
+        spec:
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "/data/models/hub"
+                type: Directory
+            - name: torchinductor-cache
+              hostPath:
+                path: "/data/dynamo-cache/torchinductor"
+                type: DirectoryOrCreate
+            - name: triton-cache
+              hostPath:
+                path: "/data/dynamo-cache/triton"
+                type: DirectoryOrCreate
+            - name: vllm-cache
+              hostPath:
+                path: "/data/dynamo-cache/vllm"
+                type: DirectoryOrCreate
+          containers:
+            - command:
+                - python3
+                - "-m"
+                - dynamo.frontend
+              args:
+                - "--model-name"
+                - deepseek-ai/DeepSeek-V4-Flash
+                - "--model-path"
+                - "/models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1"
+              image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+              workingDir: "/workspace/examples/backends/vllm"
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+              volumeMounts:
+                - mountPath: "/home/dynamo/.cache/huggingface"
+                  name: model-cache
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+    - name: VllmDecodeWorker
+      type: decode
+      replicas: 1
+      podTemplate:
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          nodeSelector:
+            kubernetes.io/hostname: icv63h7b6-1
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "/data/models/hub"
+                type: Directory
+            - name: torchinductor-cache
+              hostPath:
+                path: "/data/dynamo-cache/torchinductor"
+                type: DirectoryOrCreate
+            - name: triton-cache
+              hostPath:
+                path: "/data/dynamo-cache/triton"
+                type: DirectoryOrCreate
+            - name: vllm-cache
+              hostPath:
+                path: "/data/dynamo-cache/vllm"
+                type: DirectoryOrCreate
+          containers:
+            - command:
+                - "/bin/sh"
+                - "-c"
+              args:
+                - |
+                  python3 -m dynamo.vllm \
+                    --model /models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1 \
+                    --served-model-name deepseek-ai/DeepSeek-V4-Flash \
+                    --disaggregation-mode decode \
+                    --trust-remote-code \
+                    --kv-cache-dtype fp8 \
+                    --block-size 256 \
+                    --tensor-parallel-size 8 \
+                    --enable-prefix-caching \
+                    --enable-chunked-prefill \
+                    --tokenizer-mode deepseek_v4 \
+                    --dyn-reasoning-parser deepseek_v4 \
+                    --dyn-tool-call-parser deepseek_v4 \
+                    --attention-config '{"use_fp4_indexer_cache":false}' \
+                    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
+                    --no-enable-flashinfer-autotune \
+                    --max-model-len 100000 \
+                    --max-num-seqs 4 \
+                    --gpu-memory-utilization 0.85 \
+                    --disable-custom-all-reduce
+              image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+              workingDir: "/workspace/examples/backends/vllm"
+              securityContext:
+                runAsUser: 0
+                capabilities:
+                  add:
+                    - IPC_LOCK
+                    - SYS_RESOURCE
+              startupProbe:
+                httpGet:
+                  path: "/health"
+                  port: 9090
+                periodSeconds: 10
+                timeoutSeconds: 10
+                failureThreshold: 360
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+                - name: TORCHINDUCTOR_CACHE_DIR
+                  value: "/data/dynamo-cache/torchinductor"
+                - name: TRITON_CACHE_DIR
+                  value: "/data/dynamo-cache/triton"
+                - name: VLLM_CACHE_ROOT
+                  value: "/data/dynamo-cache/vllm"
+                - name: VLLM_ENGINE_READY_TIMEOUT_S
+                  value: '3600'
+                - name: VLLM_RANDOMIZE_DP_DUMMY_INPUTS
+                  value: '1'
+                - name: VLLM_SKIP_P2P_CHECK
+                  value: '1'
+                - name: NVIDIA_GDRCPY
+                  value: enabled
+                - name: NCCL_CUMEM_ENABLE
+                  value: '0'
+                - name: NCCL_SOCKET_IFNAME
+                  value: bond0.800
+                - name: NCCL_IB_DISABLE
+                  value: '0'
+                - name: NCCL_IB_HCA
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_NET_DEVICES
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_IB_ADDR_TYPE
+                  value: ib_global
+              volumeMounts:
+                - mountPath: "/home/dynamo/.cache/huggingface"
+                  name: model-cache
+                - mountPath: "/data/dynamo-cache/torchinductor"
+                  name: torchinductor-cache
+                - mountPath: "/data/dynamo-cache/triton"
+                  name: triton-cache
+                - mountPath: "/data/dynamo-cache/vllm"
+                  name: vllm-cache
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+              resources:
+                limits:
+                  rdma/rdma_shared_device_a: '8'
+                  nvidia.com/gpu: '8'
+                requests:
+                  memory: 512Gi
+                  ephemeral-storage: 384Gi
+                  rdma/rdma_shared_device_a: '8'
+                  nvidia.com/gpu: '8'
+      sharedMemorySize: 200Gi
+    - name: VllmPrefillWorker
+      type: prefill
+      replicas: 1
+      podTemplate:
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          nodeSelector:
+            kubernetes.io/hostname: icv63h7b6-1-1
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "/data/models/hub"
+                type: Directory
+            - name: torchinductor-cache
+              hostPath:
+                path: "/data/dynamo-cache/torchinductor"
+                type: DirectoryOrCreate
+            - name: triton-cache
+              hostPath:
+                path: "/data/dynamo-cache/triton"
+                type: DirectoryOrCreate
+            - name: vllm-cache
+              hostPath:
+                path: "/data/dynamo-cache/vllm"
+                type: DirectoryOrCreate
+          containers:
+            - command:
+                - "/bin/sh"
+                - "-c"
+              args:
+                - |
+                  python3 -m dynamo.vllm \
+                    --model /models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1 \
+                    --served-model-name deepseek-ai/DeepSeek-V4-Flash \
+                    --disaggregation-mode prefill \
+                    --trust-remote-code \
+                    --kv-cache-dtype fp8 \
+                    --block-size 256 \
+                    --tensor-parallel-size 8 \
+                    --enable-prefix-caching \
+                    --enable-chunked-prefill \
+                    --tokenizer-mode deepseek_v4 \
+                    --dyn-reasoning-parser deepseek_v4 \
+                    --dyn-tool-call-parser deepseek_v4 \
+                    --attention-config '{"use_fp4_indexer_cache":false}' \
+                    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
+                    --no-enable-flashinfer-autotune \
+                    --max-model-len 100000 \
+                    --max-num-seqs 4 \
+                    --gpu-memory-utilization 0.85 \
+              image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
+              workingDir: "/workspace/examples/backends/vllm"
+              securityContext:
+                runAsUser: 0
+                capabilities:
+                  add:
+                    - IPC_LOCK
+                    - SYS_RESOURCE
+              startupProbe:
+                httpGet:
+                  path: "/health"
+                  port: 9090
+                periodSeconds: 10
+                timeoutSeconds: 10
+                failureThreshold: 360
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+                - name: TORCHINDUCTOR_CACHE_DIR
+                  value: "/data/dynamo-cache/torchinductor"
+                - name: TRITON_CACHE_DIR
+                  value: "/data/dynamo-cache/triton"
+                - name: VLLM_CACHE_ROOT
+                  value: "/data/dynamo-cache/vllm"
+                - name: VLLM_ENGINE_READY_TIMEOUT_S
+                  value: '3600'
+                - name: VLLM_RANDOMIZE_DP_DUMMY_INPUTS
+                  value: '1'
+                - name: VLLM_SKIP_P2P_CHECK
+                  value: '1'
+                - name: NVIDIA_GDRCPY
+                  value: enabled
+                - name: NCCL_CUMEM_ENABLE
+                  value: '0'
+                - name: NCCL_SOCKET_IFNAME
+                  value: bond0.800
+                - name: NCCL_IB_DISABLE
+                  value: '0'
+                - name: NCCL_IB_HCA
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_NET_DEVICES
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_IB_ADDR_TYPE
+                  value: ib_global
+              volumeMounts:
+                - mountPath: "/home/dynamo/.cache/huggingface"
+                  name: model-cache
+                - mountPath: "/data/dynamo-cache/torchinductor"
+                  name: torchinductor-cache
+                - mountPath: "/data/dynamo-cache/triton"
+                  name: triton-cache
+                - mountPath: "/data/dynamo-cache/vllm"
+                  name: vllm-cache
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+              resources:
+                limits:
+                  rdma/rdma_shared_device_a: '8'
+                  nvidia.com/gpu: '8'
+                requests:
+                  memory: 512Gi
+                  ephemeral-storage: 384Gi
+                  rdma/rdma_shared_device_a: '8'
+                  nvidia.com/gpu: '8'
+      sharedMemorySize: 200Gi
