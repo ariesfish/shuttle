@@ -436,7 +436,7 @@ func (w KubectlResourceWatcher) getOnce(ctx context.Context, ref ResourceRef) (W
 	if kubectl == "" {
 		kubectl = "kubectl"
 	}
-	args := []string{"-n", ref.Namespace, "get", "dynamographdeployment", ref.Name, "-o", "jsonpath={.status.phase}{'|'}{.status.conditions[-1].message}"}
+	args := []string{"-n", ref.Namespace, "get", "dynamographdeployment", ref.Name, "-o", "jsonpath={.status.phase}{'|'}{.status.state}{'|'}{.status.conditions[-1].type}{'|'}{.status.conditions[-1].status}{'|'}{.status.conditions[-1].message}"}
 	cmd := exec.CommandContext(ctx, kubectl, args...)
 	stdout, err := cmd.Output()
 	stderr := ""
@@ -446,19 +446,46 @@ func (w KubectlResourceWatcher) getOnce(ctx context.Context, ref ResourceRef) (W
 	if err != nil {
 		return WatchResult{}, false, fmt.Errorf("kubectl get dynamographdeployment failed: %w: %s", err, strings.TrimSpace(stderr))
 	}
-	parts := strings.SplitN(string(stdout), "|", 2)
-	phase := strings.TrimSpace(parts[0])
-	message := ""
-	if len(parts) == 2 {
-		message = strings.TrimSpace(parts[1])
+	return dynamoGraphDeploymentWatchResult(ref, string(stdout))
+}
+
+func dynamoGraphDeploymentWatchResult(ref ResourceRef, output string) (WatchResult, bool, error) {
+	parts := strings.SplitN(output, "|", 5)
+	for len(parts) < 5 {
+		parts = append(parts, "")
 	}
-	switch strings.ToLower(phase) {
-	case "ready", "running", "deployed", "successful", "success":
-		return WatchResult{Phase: phase, Message: message}, true, nil
-	case "failed", "error":
-		return WatchResult{Phase: phase, Message: message}, true, fmt.Errorf("DynamoGraphDeployment %s/%s failed: %s", ref.Namespace, ref.Name, message)
+	phase := strings.TrimSpace(parts[0])
+	state := strings.TrimSpace(parts[1])
+	conditionType := strings.TrimSpace(parts[2])
+	conditionStatus := strings.TrimSpace(parts[3])
+	message := strings.TrimSpace(parts[4])
+	status := phase
+	if status == "" {
+		status = state
+	}
+	if status == "" && strings.EqualFold(conditionType, "Ready") {
+		status = conditionStatus
+	}
+
+	switch strings.ToLower(status) {
+	case "ready", "running", "deployed", "successful", "success", "true":
+		return WatchResult{Phase: status, Message: message}, true, nil
+	case "failed", "error", "false":
+		if strings.EqualFold(conditionType, "Ready") && strings.EqualFold(conditionStatus, "False") && !isTerminalDynamoState(state) {
+			return WatchResult{Phase: status, Message: message}, false, nil
+		}
+		return WatchResult{Phase: status, Message: message}, true, fmt.Errorf("DynamoGraphDeployment %s/%s failed: %s", ref.Namespace, ref.Name, message)
 	default:
-		return WatchResult{Phase: phase, Message: message}, false, nil
+		return WatchResult{Phase: status, Message: message}, false, nil
+	}
+}
+
+func isTerminalDynamoState(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "failed", "error":
+		return true
+	default:
+		return false
 	}
 }
 

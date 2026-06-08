@@ -123,6 +123,22 @@ func TestKubectlResourceDeleterUsesExactFallbackAfterLabelCleanup(t *testing.T) 
 	assertKubectlCall(t, calls, "delete svc deepseek-v4-flash")
 }
 
+func TestDynamoGraphDeploymentWatchResultUsesStateAndReadyCondition(t *testing.T) {
+	ref := ResourceRef{Name: "dsv4", Namespace: "dynamo-system"}
+	ready, done, err := dynamoGraphDeploymentWatchResult(ref, "|successful|Ready|True|All resources are ready")
+	if err != nil || !done || ready.Phase != "successful" {
+		t.Fatalf("expected successful state done, result=%+v done=%v err=%v", ready, done, err)
+	}
+	pending, done, err := dynamoGraphDeploymentWatchResult(ref, "|pending|Ready|False|Resources not ready")
+	if err != nil || done || pending.Phase != "pending" {
+		t.Fatalf("expected pending state not done, result=%+v done=%v err=%v", pending, done, err)
+	}
+	failed, done, err := dynamoGraphDeploymentWatchResult(ref, "|failed|Ready|False|bad")
+	if err == nil || !done || failed.Phase != "failed" {
+		t.Fatalf("expected failed state terminal error, result=%+v done=%v err=%v", failed, done, err)
+	}
+}
+
 func TestTaskExecutorRetireDeployment(t *testing.T) {
 	deleter := &fakeDeleter{result: DeleteResult{Deleted: true, Message: "deleted"}}
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
