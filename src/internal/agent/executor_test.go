@@ -1,0 +1,214 @@
+package agent
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"inference-platform/internal/management"
+)
+
+func TestTaskExecutorPreviewDeploymentDiff(t *testing.T) {
+	dryRunner := &fakeDryRunner{result: DryRunResult{Stdout: "kind: List\n", Stderr: "warning"}}
+	executor := NewTaskExecutor(dryRunner)
+
+	result, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypePreviewDeploymentDiff,
+		Payload: map[string]any{
+			"manifests": []any{
+				map[string]any{
+					"name":    "deepseek.yaml",
+					"content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: test\n",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(dryRunner.manifests) != 1 {
+		t.Fatalf("expected 1 manifest, got %d", len(dryRunner.manifests))
+	}
+	if result["mode"] != "server-side-dry-run" || result["manifestCount"] != 1 || result["stdout"] != "kind: List\n" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestTaskExecutorApplyDeployment(t *testing.T) {
+	applier := &fakeApplier{result: ApplyResult{Stdout: "applied"}}
+	watcher := &fakeWatcher{result: WatchResult{Phase: "Ready", Message: "ok"}}
+	executor := NewTaskExecutorWithApply(&fakeDryRunner{}, applier, watcher)
+
+	result, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypeApplyDeployment,
+		Payload: map[string]any{
+			"resourceName": "deepseek-v4-flash",
+			"namespace":    "dynamo-system",
+			"manifests": []any{map[string]any{
+				"name":    "dgd.yaml",
+				"content": "kind: DynamoGraphDeployment\n",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(applier.manifests) != 1 {
+		t.Fatalf("expected apply to receive manifest")
+	}
+	if watcher.ref.Name != "deepseek-v4-flash" || watcher.ref.Namespace != "dynamo-system" {
+		t.Fatalf("unexpected watch ref: %+v", watcher.ref)
+	}
+	if result["mode"] != "apply-and-watch" || result["phase"] != "Ready" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestTaskExecutorDeleteBeforeApply(t *testing.T) {
+	applier := &fakeApplier{result: ApplyResult{Stdout: "applied"}}
+	watcher := &fakeWatcher{result: WatchResult{Phase: "Ready"}}
+	deleter := &fakeDeleter{result: DeleteResult{Deleted: true, Message: "deleted"}}
+	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, applier, watcher, deleter)
+
+	result, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypeDeleteBeforeApply,
+		Payload: map[string]any{
+			"resourceName": "deepseek-v4-flash",
+			"namespace":    "dynamo-system",
+			"manifests": []any{map[string]any{
+				"name":    "dgd.yaml",
+				"content": "kind: DynamoGraphDeployment\n",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !deleter.called || len(applier.manifests) != 1 || watcher.ref.Name != "deepseek-v4-flash" {
+		t.Fatalf("expected delete, apply, watch; deleter=%+v applier=%+v watcher=%+v", deleter, applier, watcher)
+	}
+	if result["mode"] != "delete-before-apply" || result["deletedBeforeApply"] != true {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestTaskExecutorRetireDeployment(t *testing.T) {
+	deleter := &fakeDeleter{result: DeleteResult{Deleted: true, Message: "deleted"}}
+	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
+
+	result, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypeRetireDeployment,
+		Payload: map[string]any{
+			"resourceName": "deepseek-v4-flash",
+			"namespace":    "dynamo-system",
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !deleter.called || result["mode"] != "retire" || result["deleted"] != true {
+		t.Fatalf("unexpected retire result: %+v deleter=%+v", result, deleter)
+	}
+}
+
+func TestTaskExecutorPreviewRequiresManifests(t *testing.T) {
+	executor := NewTaskExecutor(&fakeDryRunner{})
+	_, err := executor.Execute(context.Background(), management.Task{Type: management.TaskTypePreviewDeploymentDiff})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestTaskExecutorNoopForOtherTasks(t *testing.T) {
+	executor := NewTaskExecutor(&fakeDryRunner{})
+	result, err := executor.Execute(context.Background(), management.Task{Type: management.TaskTypeInspectStatus})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result["mode"] != "noop" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestTaskExecutorPropagatesDryRunError(t *testing.T) {
+	executor := NewTaskExecutor(&fakeDryRunner{err: errors.New("dry-run failed")})
+	_, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypePreviewDeploymentDiff,
+		Payload: map[string]any{
+			"manifests": []any{map[string]any{"content": "kind: ConfigMap\n"}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+type fakeDryRunner struct {
+	manifests []Manifest
+	result    DryRunResult
+	err       error
+}
+
+func (r *fakeDryRunner) ServerSideDryRun(_ context.Context, manifests []Manifest) (DryRunResult, error) {
+	r.manifests = manifests
+	if r.err != nil {
+		return DryRunResult{}, r.err
+	}
+	if r.result == (DryRunResult{}) {
+		return DryRunResult{Stdout: "ok"}, nil
+	}
+	return r.result, nil
+}
+
+type fakeApplier struct {
+	manifests []Manifest
+	result    ApplyResult
+	err       error
+}
+
+func (a *fakeApplier) Apply(_ context.Context, manifests []Manifest) (ApplyResult, error) {
+	a.manifests = manifests
+	if a.err != nil {
+		return ApplyResult{}, a.err
+	}
+	if a.result == (ApplyResult{}) {
+		return ApplyResult{Stdout: "applied"}, nil
+	}
+	return a.result, nil
+}
+
+type fakeWatcher struct {
+	ref    ResourceRef
+	result WatchResult
+	err    error
+}
+
+type fakeDeleter struct {
+	ref    ResourceRef
+	called bool
+	result DeleteResult
+	err    error
+}
+
+func (w *fakeWatcher) Wait(_ context.Context, ref ResourceRef) (WatchResult, error) {
+	w.ref = ref
+	if w.err != nil {
+		return WatchResult{}, w.err
+	}
+	if w.result == (WatchResult{}) {
+		return WatchResult{Phase: "Ready"}, nil
+	}
+	return w.result, nil
+}
+
+func (d *fakeDeleter) DeleteAndWait(_ context.Context, ref ResourceRef) (DeleteResult, error) {
+	d.ref = ref
+	d.called = true
+	if d.err != nil {
+		return DeleteResult{}, d.err
+	}
+	if d.result == (DeleteResult{}) {
+		return DeleteResult{Deleted: true}, nil
+	}
+	return d.result, nil
+}
