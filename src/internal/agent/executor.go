@@ -18,11 +18,12 @@ type Executor interface {
 }
 
 type TaskExecutor struct {
-	dryRunner ManifestDryRunner
-	applier   ManifestApplier
-	watcher   ResourceWatcher
-	deleter   ResourceDeleter
-	now       func() time.Time
+	dryRunner   ManifestDryRunner
+	applier     ManifestApplier
+	watcher     ResourceWatcher
+	deleter     ResourceDeleter
+	diagnostics DiagnosticsCollector
+	now         func() time.Time
 }
 
 type FakeKubernetesExecutor struct{}
@@ -48,7 +49,7 @@ func NewTaskExecutorWithKubernetes(dryRunner ManifestDryRunner, applier Manifest
 	if deleter == nil {
 		deleter = KubectlResourceDeleter{Timeout: 10 * time.Minute, Interval: 5 * time.Second}
 	}
-	return &TaskExecutor{dryRunner: dryRunner, applier: applier, watcher: watcher, deleter: deleter, now: time.Now}
+	return &TaskExecutor{dryRunner: dryRunner, applier: applier, watcher: watcher, deleter: deleter, diagnostics: KubectlDiagnosticsCollector{}, now: time.Now}
 }
 
 func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (map[string]any, error) {
@@ -69,6 +70,8 @@ func (FakeKubernetesExecutor) Execute(_ context.Context, task management.Task) (
 		return map[string]any{"mode": "fake-delete-before-apply", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "endpointUrl": endpointURLFromPayload(resourceRef, nil), "phase": "Ready", "deletedBeforeApply": true, "message": "fake redeploy ok"}, nil
 	case management.TaskTypeRetireDeployment:
 		return map[string]any{"mode": "fake-retire", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "deleted": true, "message": "fake retire ok"}, nil
+	case management.TaskTypeFetchDiagnostics:
+		return map[string]any{"mode": "fake-diagnostics", "resource": resourceRef.Name, "namespace": resourceRef.Namespace, "sections": []any{}}, nil
 	default:
 		return map[string]any{"mode": "fake-noop", "taskType": task.Type}, nil
 	}
@@ -84,6 +87,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task management.Task) (map[s
 		return e.deleteBeforeApply(ctx, task)
 	case management.TaskTypeRetireDeployment:
 		return e.retireDeployment(ctx, task)
+	case management.TaskTypeFetchDiagnostics:
+		return e.fetchDiagnostics(ctx, task)
 	default:
 		return map[string]any{
 			"mode":      "noop",
@@ -168,6 +173,36 @@ func (e *TaskExecutor) retireDeployment(ctx context.Context, task management.Tas
 	}, nil
 }
 
+func (e *TaskExecutor) fetchDiagnostics(ctx context.Context, task management.Task) (map[string]any, error) {
+	resourceRef, err := resourceRefFromPayload(task.Payload)
+	if err != nil {
+		return nil, err
+	}
+	collector := e.diagnostics
+	if collector == nil {
+		collector = KubectlDiagnosticsCollector{}
+	}
+	result, err := collector.Fetch(ctx, resourceRef)
+	if err != nil {
+		return nil, err
+	}
+	sections := make([]any, 0, len(result.Sections))
+	for _, section := range result.Sections {
+		sections = append(sections, map[string]any{
+			"name":   section.Name,
+			"output": section.Output,
+			"error":  section.Error,
+		})
+	}
+	return map[string]any{
+		"mode":      "diagnostics",
+		"resource":  resourceRef.Name,
+		"namespace": resourceRef.Namespace,
+		"sections":  sections,
+		"handledAt": e.now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
 func (e *TaskExecutor) applyAndWatch(ctx context.Context, manifests []Manifest, resourceRef ResourceRef, mode string, deleteResult *DeleteResult) (map[string]any, error) {
 	applyResult, err := e.applier.Apply(ctx, manifests)
 	if err != nil {
@@ -212,6 +247,10 @@ type ResourceDeleter interface {
 	DeleteAndWait(context.Context, ResourceRef) (DeleteResult, error)
 }
 
+type DiagnosticsCollector interface {
+	Fetch(context.Context, ResourceRef) (DiagnosticsResult, error)
+}
+
 type ApplyResult struct {
 	Stdout string
 	Stderr string
@@ -230,6 +269,16 @@ type WatchResult struct {
 type DeleteResult struct {
 	Deleted bool
 	Message string
+}
+
+type DiagnosticsResult struct {
+	Sections []DiagnosticsSection
+}
+
+type DiagnosticsSection struct {
+	Name   string
+	Output string
+	Error  string
 }
 
 type KubectlDryRunner struct {
@@ -253,6 +302,13 @@ type KubectlResourceDeleter struct {
 	Timeout     time.Duration
 	Interval    time.Duration
 	LabelKey    string
+	runKubectl  func(context.Context, string, ...string) (string, error)
+}
+
+type KubectlDiagnosticsCollector struct {
+	KubectlPath string
+	TailLines   int
+	MaxBytes    int
 	runKubectl  func(context.Context, string, ...string) (string, error)
 }
 
@@ -314,6 +370,97 @@ func (a KubectlApplier) Apply(ctx context.Context, manifests []Manifest) (ApplyR
 		return ApplyResult{Stdout: string(stdout), Stderr: stderr}, fmt.Errorf("kubectl apply failed: %w", err)
 	}
 	return ApplyResult{Stdout: string(stdout), Stderr: stderr}, nil
+}
+
+func (c KubectlDiagnosticsCollector) Fetch(ctx context.Context, ref ResourceRef) (DiagnosticsResult, error) {
+	if strings.TrimSpace(ref.Name) == "" || strings.TrimSpace(ref.Namespace) == "" {
+		return DiagnosticsResult{}, errors.New("resource name and namespace are required")
+	}
+	kubectl := c.KubectlPath
+	if kubectl == "" {
+		kubectl = "kubectl"
+	}
+	runKubectl := c.runKubectl
+	if runKubectl == nil {
+		runKubectl = runKubectlCombined
+	}
+	tailLines := c.TailLines
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+	maxBytes := c.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = 16 * 1024
+	}
+	selector := "nvidia.com/dynamo-graph-deployment=" + ref.Name
+	commands := []struct {
+		name string
+		args []string
+	}{
+		{name: "dynamographdeployment", args: []string{"-n", ref.Namespace, "get", "dynamographdeployment", ref.Name, "-o", "yaml"}},
+		{name: "dynamocomponentdeploymentsByLabel", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", "-l", selector, "-o", "wide"}},
+		{name: "dynamocomponentdeploymentByName", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", ref.Name, "-o", "wide"}},
+		{name: "podsByLabel", args: []string{"-n", ref.Namespace, "get", "pod", "-l", selector, "-o", "wide"}},
+		{name: "podsByNamePrefix", args: []string{"-n", ref.Namespace, "get", "pod", "-o", "name"}},
+		{name: "events", args: []string{"-n", ref.Namespace, "get", "events", "--sort-by=.lastTimestamp"}},
+		{name: "currentLogsByLabel", args: []string{"-n", ref.Namespace, "logs", "-l", selector, "--all-containers=true", "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true"}},
+		{name: "previousLogsByLabel", args: []string{"-n", ref.Namespace, "logs", "-l", selector, "--all-containers=true", "--previous", "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true"}},
+	}
+	sections := make([]DiagnosticsSection, 0, len(commands)+2)
+	var podNames []string
+	for _, command := range commands {
+		output, err := runKubectl(ctx, kubectl, command.args...)
+		if command.name == "podsByNamePrefix" {
+			podNames = podNamesByPrefix(output, ref.Name)
+			output = strings.Join(podNames, "\n")
+		}
+		section := DiagnosticsSection{Name: command.name, Output: truncateBytes(output, maxBytes)}
+		if err != nil {
+			section.Error = strings.TrimSpace(err.Error())
+		}
+		sections = append(sections, section)
+	}
+	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, ref.Namespace, podNames, false, tailLines, maxBytes))
+	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, ref.Namespace, podNames, true, tailLines, maxBytes))
+	return DiagnosticsResult{Sections: sections}, nil
+}
+
+func (c KubectlDiagnosticsCollector) logsForPods(ctx context.Context, runKubectl func(context.Context, string, ...string) (string, error), kubectl string, namespace string, podNames []string, previous bool, tailLines int, maxBytes int) DiagnosticsSection {
+	sectionName := "currentLogsByNamePrefix"
+	if previous {
+		sectionName = "previousLogsByNamePrefix"
+	}
+	if len(podNames) == 0 {
+		return DiagnosticsSection{Name: sectionName, Output: "no pods matched resource name prefix"}
+	}
+	var outputs []string
+	var sectionErrors []string
+	for _, podName := range podNames {
+		args := []string{"-n", namespace, "logs", podName, "--all-containers=true"}
+		if previous {
+			args = append(args, "--previous")
+		}
+		args = append(args, "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true")
+		output, err := runKubectl(ctx, kubectl, args...)
+		outputs = append(outputs, "# "+podName+"\n"+output)
+		if err != nil {
+			sectionErrors = append(sectionErrors, podName+": "+strings.TrimSpace(err.Error()))
+		}
+	}
+	return DiagnosticsSection{Name: sectionName, Output: truncateBytes(strings.Join(outputs, "\n"), maxBytes), Error: strings.Join(sectionErrors, "\n")}
+}
+
+func podNamesByPrefix(output string, prefix string) []string {
+	var podNames []string
+	for _, line := range strings.Split(output, "\n") {
+		name := strings.TrimSpace(line)
+		name = strings.TrimPrefix(name, "pod/")
+		if name == "" || !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		podNames = append(podNames, name)
+	}
+	return podNames
 }
 
 func (w KubectlResourceWatcher) Wait(ctx context.Context, ref ResourceRef) (WatchResult, error) {
@@ -518,6 +665,13 @@ func runKubectlCombined(ctx context.Context, kubectl string, args ...string) (st
 	cmd := exec.CommandContext(ctx, kubectl, args...)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func truncateBytes(value string, maxBytes int) string {
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return value
+	}
+	return value[:maxBytes] + "\n...[truncated]"
 }
 
 func nonEmptyStrings(values []string) []string {

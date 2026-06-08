@@ -250,6 +250,13 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	if applyTask.Type != TaskTypeApplyDeployment || applyTask.Payload["resourceName"] != "deepseek-v4-flash" || applyTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected apply task: %+v", applyTask)
 	}
+	transitions, err := store.ListServingApplicationTransitions(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transitions) != 2 || transitions[0].To != ServingApplicationPhaseDraft || transitions[1].To != ServingApplicationPhaseApplying || transitions[1].TaskID != applyTask.ID {
+		t.Fatalf("unexpected transitions after apply task: %+v", transitions)
+	}
 	updatedApp, err := store.GetServingApplication(app.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +279,13 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	}
 	if retireTask.Type != TaskTypeRetireDeployment || retireTask.Payload["namespace"] != "tenant-a" {
 		t.Fatalf("unexpected retire task: %+v", retireTask)
+	}
+	diagnosticsTask, err := store.CreateDiagnosticsTask(CreateDiagnosticsTaskRequest{ServingApplicationID: app.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnosticsTask.Type != TaskTypeFetchDiagnostics || diagnosticsTask.Payload["resourceName"] != "deepseek-v4-flash" || diagnosticsTask.Payload["namespace"] != "tenant-a" {
+		t.Fatalf("unexpected diagnostics task: %+v", diagnosticsTask)
 	}
 	retiringApp, err := store.GetServingApplication(app.ID)
 	if err != nil {
@@ -320,6 +334,14 @@ func TestCreateServingApplicationAndPreviewTask(t *testing.T) {
 	}
 	if readyApp.Phase != ServingApplicationPhaseReady || readyApp.EndpointURL == "" {
 		t.Fatalf("expected app Ready with endpoint, got %+v", readyApp)
+	}
+	transitions, err = store.ListServingApplicationTransitions(app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastTransition := transitions[len(transitions)-1]
+	if lastTransition.To != ServingApplicationPhaseReady || lastTransition.Actor != agent.ID || lastTransition.TaskID != leasedApply.ID {
+		t.Fatalf("unexpected ready transition: %+v", lastTransition)
 	}
 	endpoints, err := store.ListEndpoints()
 	if err != nil {

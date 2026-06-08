@@ -50,6 +50,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/apply-task", s.createApplyTask)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/redeploy-task", s.createRedeployTask)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/retire-task", s.createRetireTask)
+	mux.HandleFunc("POST /v1/serving-applications/{appID}/diagnostics-task", s.createDiagnosticsTask)
+	mux.HandleFunc("GET /v1/serving-applications/{appID}/transitions", s.listServingApplicationTransitions)
 	mux.HandleFunc("GET /v1/serving-applications/{appID}/observability", s.getObservabilityEntry)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
 	mux.HandleFunc("GET /v1/audit-records", s.listAuditRecords)
@@ -216,6 +218,22 @@ func (s *Server) createRetireTask(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "create_retire_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
 	}
 	writeResult(w, task, http.StatusCreated, err)
+}
+
+func (s *Server) createDiagnosticsTask(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator") {
+		return
+	}
+	task, err := s.store.CreateDiagnosticsTask(CreateDiagnosticsTaskRequest{ServingApplicationID: r.PathValue("appID")})
+	if err == nil {
+		s.audit(r, "create_diagnostics_task", task.ID, map[string]any{"servingApplicationId": r.PathValue("appID")})
+	}
+	writeResult(w, task, http.StatusCreated, err)
+}
+
+func (s *Server) listServingApplicationTransitions(w http.ResponseWriter, r *http.Request) {
+	transitions, err := s.store.ListServingApplicationTransitions(r.PathValue("appID"))
+	writeResult(w, transitions, http.StatusOK, err)
 }
 
 func (s *Server) getObservabilityEntry(w http.ResponseWriter, r *http.Request) {

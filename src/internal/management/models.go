@@ -84,6 +84,17 @@ type ServingApplication struct {
 	UpdatedAt     time.Time               `json:"updatedAt"`
 }
 
+type ServingApplicationTransition struct {
+	ID                   string                  `json:"id"`
+	ServingApplicationID string                  `json:"servingApplicationId"`
+	Actor                string                  `json:"actor"`
+	TaskID               string                  `json:"taskId,omitempty"`
+	From                 ServingApplicationPhase `json:"from,omitempty"`
+	To                   ServingApplicationPhase `json:"to"`
+	Reason               string                  `json:"reason,omitempty"`
+	CreatedAt            time.Time               `json:"createdAt"`
+}
+
 type ModelIntent struct {
 	Family       string `json:"family"`
 	Variant      string `json:"variant"`
@@ -243,6 +254,10 @@ type CreateRedeployTaskRequest struct {
 }
 
 type CreateRetireTaskRequest struct {
+	ServingApplicationID string `json:"servingApplicationId"`
+}
+
+type CreateDiagnosticsTaskRequest struct {
 	ServingApplicationID string `json:"servingApplicationId"`
 }
 

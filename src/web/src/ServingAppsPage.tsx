@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type CreateServingApplicationInput, type ServingApplication } from './api';
+import { api, type CreateServingApplicationInput, type ServingApplication, type Task } from './api';
 import { useI18n } from './i18n';
 
 const defaults = {
@@ -32,6 +32,7 @@ export function ServingAppsPage() {
     namespace: defaults.namespace,
     endpointName: 'deepseek-v4-flash',
   });
+  const [selectedAppId, setSelectedAppId] = useState('');
 
   const selectedArtifact = artifacts.data?.find((artifact) => artifact.id === form.artifactId);
   const createApp = useMutation({
@@ -42,10 +43,11 @@ export function ServingAppsPage() {
   });
 
   const actionMutation = useMutation({
-    mutationFn: async ({ appId, action }: { appId: string; action: 'preview' | 'apply' | 'redeploy' | 'retire' }) => {
+    mutationFn: async ({ appId, action }: { appId: string; action: 'preview' | 'apply' | 'redeploy' | 'retire' | 'diagnostics' }) => {
       if (action === 'preview') return api.createPreviewTask(appId);
       if (action === 'apply') return api.createApplyTask(appId);
       if (action === 'redeploy') return api.createRedeployTask(appId);
+      if (action === 'diagnostics') return api.createDiagnosticsTask(appId);
       return api.createRetireTask(appId);
     },
     onSuccess: () => {
@@ -55,6 +57,13 @@ export function ServingAppsPage() {
     },
   });
 
+  const transitions = useQuery({
+    queryKey: ['serving-application-transitions', selectedAppId],
+    queryFn: () => api.listServingApplicationTransitions(selectedAppId),
+    enabled: Boolean(selectedAppId),
+    refetchInterval: 2000,
+  });
+
   const endpointsByApp = useMemo(() => {
     const map = new Map<string, string>();
     for (const endpoint of endpoints.data ?? []) {
@@ -62,6 +71,12 @@ export function ServingAppsPage() {
     }
     return map;
   }, [endpoints.data]);
+
+  const latestDiagnosticsTask = useMemo(() => {
+    return [...(tasks.data ?? [])]
+      .reverse()
+      .find((task) => task.type === 'FetchDiagnostics' && task.payload?.servingApplicationId === selectedAppId);
+  }, [selectedAppId, tasks.data]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -133,11 +148,30 @@ export function ServingAppsPage() {
               </thead>
               <tbody>
                 {apps.data.map((app) => (
-                  <ServingAppRow key={app.id} app={app} endpoint={endpointsByApp.get(app.id)} onAction={(action) => actionMutation.mutate({ appId: app.id, action })} disabled={actionMutation.isPending} />
+                  <ServingAppRow key={app.id} app={app} endpoint={endpointsByApp.get(app.id)} selected={selectedAppId === app.id} onSelect={() => setSelectedAppId(app.id)} onAction={(action) => actionMutation.mutate({ appId: app.id, action })} disabled={actionMutation.isPending} />
                 ))}
               </tbody>
             </table>
           ) : apps.isLoading ? null : <p className="muted">{t('noData')}</p>}
+        </section>
+        <section className="card">
+          <h2>History & Diagnostics</h2>
+          {!selectedAppId ? <p className="muted">Select a Serving Application to inspect transitions and diagnostics.</p> : null}
+          {selectedAppId ? (
+            <div className="grid">
+              <div>
+                <h3>Transitions</h3>
+                {transitions.data?.slice(-8).reverse().map((transition) => (
+                  <div key={transition.id} className="card" style={{ marginBottom: 8 }}>
+                    <strong>{transition.from || '-'} → {transition.to}</strong> <span className="badge muted">{transition.actor}</span>
+                    <div className="muted"><code>{transition.taskId || transition.id}</code></div>
+                    {transition.reason ? <div>{transition.reason}</div> : null}
+                  </div>
+                )) ?? <p className="muted">{t('noData')}</p>}
+              </div>
+              <DiagnosticsTask task={latestDiagnosticsTask} />
+            </div>
+          ) : null}
         </section>
         <section className="card">
           <h2>{t('tasksTitle')}</h2>
@@ -154,23 +188,43 @@ export function ServingAppsPage() {
   );
 }
 
-function ServingAppRow({ app, endpoint, onAction, disabled }: { app: ServingApplication; endpoint?: string; onAction: (action: 'preview' | 'apply' | 'redeploy' | 'retire') => void; disabled: boolean }) {
+function ServingAppRow({ app, endpoint, selected, onSelect, onAction, disabled }: { app: ServingApplication; endpoint?: string; selected: boolean; onSelect: () => void; onAction: (action: 'preview' | 'apply' | 'redeploy' | 'retire' | 'diagnostics') => void; disabled: boolean }) {
   const { t } = useI18n();
   const url = endpoint || app.endpointUrl;
   return (
     <tr>
-      <td><strong>{app.name}</strong><div className="muted"><code>{app.id}</code></div><div className="muted">{app.model.family}/{app.model.variant}</div></td>
+      <td><strong>{app.name}</strong>{selected ? <span className="badge muted" style={{ marginLeft: 8 }}>selected</span> : null}<div className="muted"><code>{app.id}</code></div><div className="muted">{app.model.family}/{app.model.variant}</div></td>
       <td><span className="badge">{app.phase}</span></td>
       <td>{url ? <code>{url}</code> : <span className="muted">-</span>}</td>
       <td>
         <div className="toolbar">
+          <button className="button secondary" disabled={disabled} onClick={onSelect}>Inspect</button>
           <button className="button secondary" disabled={disabled} onClick={() => onAction('preview')}>{t('preview')}</button>
           <button className="button secondary" disabled={disabled} onClick={() => onAction('apply')}>{t('apply')}</button>
           <button className="button secondary" disabled={disabled} onClick={() => onAction('redeploy')}>{t('redeploy')}</button>
+          <button className="button secondary" disabled={disabled} onClick={() => onAction('diagnostics')}>Diagnostics</button>
           <button className="button secondary" disabled={disabled} onClick={() => onAction('retire')}>{t('retire')}</button>
         </div>
       </td>
     </tr>
+  );
+}
+
+function DiagnosticsTask({ task }: { task?: Task }) {
+  const sections = task?.result?.sections as Array<{ name: string; output?: string; error?: string }> | undefined;
+  return (
+    <div>
+      <h3>Diagnostics</h3>
+      {!task ? <p className="muted">Run Diagnostics to fetch bounded cluster state, events, and logs.</p> : null}
+      {task ? <p><span className="badge muted">{task.status}</span> <code>{task.id}</code></p> : null}
+      {task?.error ? <p className="error">{task.error}</p> : null}
+      {sections?.map((section) => (
+        <details key={section.name} className="card" style={{ marginBottom: 8 }}>
+          <summary><strong>{section.name}</strong>{section.error ? <span className="error"> — {section.error}</span> : null}</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{section.output || '-'}</pre>
+        </details>
+      ))}
+    </div>
   );
 }
 

@@ -89,6 +89,9 @@ func normalizeStoreData(data *storeData) {
 	if data.ServingApplications == nil {
 		data.ServingApplications = map[string]ServingApplication{}
 	}
+	if data.Transitions == nil {
+		data.Transitions = map[string]ServingApplicationTransition{}
+	}
 	if data.Endpoints == nil {
 		data.Endpoints = map[string]EndpointRegistryEntry{}
 	}

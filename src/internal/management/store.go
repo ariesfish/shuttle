@@ -33,6 +33,7 @@ type Store interface {
 	CreateServingApplication(CreateServingApplicationRequest) (ServingApplication, error)
 	ListServingApplications() ([]ServingApplication, error)
 	GetServingApplication(string) (ServingApplication, error)
+	ListServingApplicationTransitions(string) ([]ServingApplicationTransition, error)
 	ListEndpoints() ([]EndpointRegistryEntry, error)
 	GetObservabilityEntry(string) (ObservabilityEntry, error)
 	ListAuditRecords() ([]AuditRecord, error)
@@ -42,6 +43,7 @@ type Store interface {
 	CreateApplyTask(CreateApplyTaskRequest) (Task, error)
 	CreateRedeployTask(CreateRedeployTaskRequest) (Task, error)
 	CreateRetireTask(CreateRetireTaskRequest) (Task, error)
+	CreateDiagnosticsTask(CreateDiagnosticsTaskRequest) (Task, error)
 	ListTasks(clusterID string) ([]Task, error)
 	LeaseNextTask(clusterID string, req LeaseTaskRequest, ttl time.Duration) (Task, error)
 	RenewTaskLease(taskID string, req RenewTaskLeaseRequest, ttl time.Duration) (Task, error)
@@ -57,15 +59,16 @@ type FileStore struct {
 }
 
 type storeData struct {
-	NextID              int                              `json:"nextId"`
-	Projects            map[string]Project               `json:"projects"`
-	Clusters            map[string]InferenceCluster      `json:"clusters"`
-	Agents              map[string]ClusterAgent          `json:"agents"`
-	ModelArtifacts      map[string]ModelArtifact         `json:"modelArtifacts"`
-	ServingApplications map[string]ServingApplication    `json:"servingApplications"`
-	Endpoints           map[string]EndpointRegistryEntry `json:"endpoints"`
-	AuditRecords        map[string]AuditRecord           `json:"auditRecords"`
-	Tasks               map[string]Task                  `json:"tasks"`
+	NextID              int                                     `json:"nextId"`
+	Projects            map[string]Project                      `json:"projects"`
+	Clusters            map[string]InferenceCluster             `json:"clusters"`
+	Agents              map[string]ClusterAgent                 `json:"agents"`
+	ModelArtifacts      map[string]ModelArtifact                `json:"modelArtifacts"`
+	ServingApplications map[string]ServingApplication           `json:"servingApplications"`
+	Transitions         map[string]ServingApplicationTransition `json:"transitions"`
+	Endpoints           map[string]EndpointRegistryEntry        `json:"endpoints"`
+	AuditRecords        map[string]AuditRecord                  `json:"auditRecords"`
+	Tasks               map[string]Task                         `json:"tasks"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -86,6 +89,7 @@ func newStoreData() storeData {
 		Agents:              map[string]ClusterAgent{},
 		ModelArtifacts:      map[string]ModelArtifact{},
 		ServingApplications: map[string]ServingApplication{},
+		Transitions:         map[string]ServingApplicationTransition{},
 		Endpoints:           map[string]EndpointRegistryEntry{},
 		AuditRecords:        map[string]AuditRecord{},
 		Tasks:               map[string]Task{},
@@ -326,6 +330,7 @@ func (s *FileStore) CreateServingApplication(req CreateServingApplicationRequest
 		UpdatedAt:     now,
 	}
 	s.data.ServingApplications[app.ID] = app
+	s.recordServingApplicationTransitionLocked(app.ID, "system", "", "", app.Phase, "created")
 	return app, s.saveLocked()
 }
 
@@ -350,6 +355,23 @@ func (s *FileStore) GetServingApplication(id string) (ServingApplication, error)
 		return ServingApplication{}, ErrNotFound
 	}
 	return app, nil
+}
+
+func (s *FileStore) ListServingApplicationTransitions(appID string) ([]ServingApplicationTransition, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.data.ServingApplications[appID]; !ok {
+		return nil, ErrNotFound
+	}
+	transitions := make([]ServingApplicationTransition, 0)
+	for _, transition := range s.data.Transitions {
+		if transition.ServingApplicationID == appID {
+			transitions = append(transitions, transition)
+		}
+	}
+	sort.Slice(transitions, func(i, j int) bool { return transitions[i].CreatedAt.Before(transitions[j].CreatedAt) })
+	return transitions, nil
 }
 
 func (s *FileStore) ListEndpoints() ([]EndpointRegistryEntry, error) {
@@ -457,7 +479,7 @@ func (s *FileStore) CreateApplyTask(req CreateApplyTaskRequest) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	s.setServingApplicationPhaseLocked(req.ServingApplicationID, ServingApplicationPhaseApplying)
+	s.setServingApplicationPhaseLocked(req.ServingApplicationID, "system", task.ID, ServingApplicationPhaseApplying, "apply task created")
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
 }
@@ -470,7 +492,7 @@ func (s *FileStore) CreateRedeployTask(req CreateRedeployTaskRequest) (Task, err
 	if err != nil {
 		return Task{}, err
 	}
-	s.setServingApplicationPhaseLocked(req.ServingApplicationID, ServingApplicationPhaseApplying)
+	s.setServingApplicationPhaseLocked(req.ServingApplicationID, "system", task.ID, ServingApplicationPhaseApplying, "redeploy task created")
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
 }
@@ -492,16 +514,64 @@ func (s *FileStore) CreateRetireTask(req CreateRetireTaskRequest) (Task, error) 
 			"namespace":            app.Placement.Namespace,
 		},
 	})
-	s.setServingApplicationPhaseLocked(req.ServingApplicationID, ServingApplicationPhaseRetiring)
+	s.setServingApplicationPhaseLocked(req.ServingApplicationID, "system", task.ID, ServingApplicationPhaseRetiring, "retire task created")
 	s.data.Tasks[task.ID] = task
 	return task, s.saveLocked()
 }
 
-func (s *FileStore) setServingApplicationPhaseLocked(appID string, phase ServingApplicationPhase) {
+func (s *FileStore) CreateDiagnosticsTask(req CreateDiagnosticsTaskRequest) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	app, ok := s.data.ServingApplications[req.ServingApplicationID]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	resourceName := kubernetesName(app.Name)
+	if resourceName == "" {
+		resourceName = kubernetesName(app.ID)
+	}
+	task := s.newTaskLocked(CreateTaskRequest{
+		ClusterID: app.Placement.ClusterID,
+		Type:      TaskTypeFetchDiagnostics,
+		Payload: map[string]any{
+			"servingApplicationId": app.ID,
+			"resourceName":         resourceName,
+			"namespace":            app.Placement.Namespace,
+		},
+	})
+	s.data.Tasks[task.ID] = task
+	return task, s.saveLocked()
+}
+
+func (s *FileStore) setServingApplicationPhaseLocked(appID string, actor string, taskID string, phase ServingApplicationPhase, reason string) {
 	app := s.data.ServingApplications[appID]
+	from := app.Phase
+	if from == phase {
+		return
+	}
 	app.Phase = phase
 	app.UpdatedAt = s.now().UTC()
 	s.data.ServingApplications[app.ID] = app
+	s.recordServingApplicationTransitionLocked(app.ID, actor, taskID, from, phase, reason)
+}
+
+func (s *FileStore) recordServingApplicationTransitionLocked(appID string, actor string, taskID string, from ServingApplicationPhase, to ServingApplicationPhase, reason string) {
+	if actor == "" {
+		actor = "system"
+	}
+	now := s.now().UTC()
+	transition := ServingApplicationTransition{
+		ID:                   s.nextID("transition"),
+		ServingApplicationID: appID,
+		Actor:                actor,
+		TaskID:               strings.TrimSpace(taskID),
+		From:                 from,
+		To:                   to,
+		Reason:               strings.TrimSpace(reason),
+		CreatedAt:            now,
+	}
+	s.data.Transitions[transition.ID] = transition
 }
 
 func (s *FileStore) newRenderedTaskLocked(appID string, taskType TaskType) (Task, error) {
@@ -650,9 +720,7 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 	}
 
 	if task.Status == TaskStatusFailed {
-		app.Phase = ServingApplicationPhaseFailed
-		app.UpdatedAt = s.now().UTC()
-		s.data.ServingApplications[app.ID] = app
+		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseFailed, taskFailureReason(task))
 		return
 	}
 	if task.Status != TaskStatusSucceeded {
@@ -661,22 +729,27 @@ func (s *FileStore) updateServingApplicationPhaseForTaskLocked(task Task) {
 
 	switch task.Type {
 	case TaskTypePreviewDeploymentDiff:
-		app.Phase = ServingApplicationPhaseValidated
+		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseValidated, "preview succeeded")
 	case TaskTypeApplyDeployment, TaskTypeDeleteBeforeApply:
-		app.Phase = ServingApplicationPhaseReady
-		if phase, _ := task.Result["phase"].(string); strings.EqualFold(phase, "failed") || strings.EqualFold(phase, "error") {
-			app.Phase = ServingApplicationPhaseFailed
-		} else {
-			app = s.upsertEndpointForTaskLocked(app, task)
+		phase := ServingApplicationPhaseReady
+		reason := "deployment ready"
+		if resultPhase, _ := task.Result["phase"].(string); strings.EqualFold(resultPhase, "failed") || strings.EqualFold(resultPhase, "error") {
+			phase = ServingApplicationPhaseFailed
+			reason = taskResultMessage(task)
+		}
+		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, phase, reason)
+		if phase == ServingApplicationPhaseReady {
+			updatedApp := s.data.ServingApplications[app.ID]
+			updatedApp = s.upsertEndpointForTaskLocked(updatedApp, task)
+			updatedApp.UpdatedAt = s.now().UTC()
+			s.data.ServingApplications[updatedApp.ID] = updatedApp
 		}
 	case TaskTypeRetireDeployment:
-		app.Phase = ServingApplicationPhaseRetired
+		s.setServingApplicationPhaseLocked(app.ID, task.LeaseOwner, task.ID, ServingApplicationPhaseRetired, "retire succeeded")
 		s.removeEndpointForServingApplicationLocked(app.ID)
 	default:
 		return
 	}
-	app.UpdatedAt = s.now().UTC()
-	s.data.ServingApplications[app.ID] = app
 }
 
 func (s *FileStore) upsertEndpointForTaskLocked(app ServingApplication, task Task) ServingApplication {
@@ -766,6 +839,25 @@ func defaultEndpointURL(app ServingApplication) string {
 		namespace = "default"
 	}
 	return "http://" + endpointName + "." + namespace + ".svc.cluster.local:8000/v1"
+}
+
+func taskFailureReason(task Task) string {
+	if strings.TrimSpace(task.Error) != "" {
+		return task.Error
+	}
+	return taskResultMessage(task)
+}
+
+func taskResultMessage(task Task) string {
+	message, _ := task.Result["message"].(string)
+	if strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	phase, _ := task.Result["phase"].(string)
+	if strings.TrimSpace(phase) != "" {
+		return "task result phase: " + strings.TrimSpace(phase)
+	}
+	return string(task.Type) + " completed"
 }
 
 func (s *FileStore) sortedTasksLocked() []Task {

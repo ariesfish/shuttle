@@ -79,6 +79,17 @@ export interface ServingApplication {
   updatedAt: string;
 }
 
+export interface ServingApplicationTransition {
+  id: string;
+  servingApplicationId: string;
+  actor: string;
+  taskId?: string;
+  from?: string;
+  to: string;
+  reason?: string;
+  createdAt: string;
+}
+
 export interface ModelIntent {
   family: string;
   variant: string;
@@ -224,6 +235,8 @@ export const api = {
   createApplyTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/apply-task`, { method: 'POST' }),
   createRedeployTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/redeploy-task`, { method: 'POST' }),
   createRetireTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/retire-task`, { method: 'POST' }),
+  createDiagnosticsTask: (appId: string) => request<Task>(`/v1/serving-applications/${appId}/diagnostics-task`, { method: 'POST' }),
+  listServingApplicationTransitions: (appId: string) => request<ServingApplicationTransition[]>(`/v1/serving-applications/${appId}/transitions`),
   listTasks: () => request<Task[]>('/v1/tasks'),
   listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/serving-applications/${appId}/observability`),

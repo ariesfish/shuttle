@@ -139,6 +139,59 @@ func TestDynamoGraphDeploymentWatchResultUsesStateAndReadyCondition(t *testing.T
 	}
 }
 
+func TestTaskExecutorFetchDiagnostics(t *testing.T) {
+	executor := NewTaskExecutor(&fakeDryRunner{})
+	executor.diagnostics = &fakeDiagnosticsCollector{result: DiagnosticsResult{Sections: []DiagnosticsSection{{Name: "pods", Output: "pod ok"}}}}
+
+	result, err := executor.Execute(context.Background(), management.Task{
+		Type: management.TaskTypeFetchDiagnostics,
+		Payload: map[string]any{
+			"resourceName": "deepseek-v4-flash",
+			"namespace":    "dynamo-system",
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	sections, ok := result["sections"].([]any)
+	if !ok || len(sections) != 1 || result["mode"] != "diagnostics" {
+		t.Fatalf("unexpected diagnostics result: %+v", result)
+	}
+}
+
+func TestKubectlDiagnosticsCollectorUsesBoundedCommands(t *testing.T) {
+	var calls []string
+	collector := KubectlDiagnosticsCollector{
+		TailLines: 50,
+		MaxBytes:  8,
+		runKubectl: func(_ context.Context, _ string, args ...string) (string, error) {
+			call := strings.Join(args, " ")
+			calls = append(calls, call)
+			if strings.Contains(call, "get pod -o name") {
+				return "pod/deepseek-v4-flash-abc\npod/other-app", nil
+			}
+			if strings.Contains(call, "--previous") {
+				return "previous log output", errors.New("previous unavailable")
+			}
+			return "123456789abcdef", nil
+		},
+	}
+	result, err := collector.Fetch(context.Background(), ResourceRef{Name: "deepseek-v4-flash", Namespace: "dynamo-system"})
+	if err != nil {
+		t.Fatalf("fetch diagnostics: %v", err)
+	}
+	if len(result.Sections) != 10 {
+		t.Fatalf("expected sections, got %+v", result.Sections)
+	}
+	if !strings.Contains(result.Sections[0].Output, "truncated") || result.Sections[8].Error != "" || result.Sections[9].Error == "" {
+		t.Fatalf("expected bounded output and previous-log section error, got %+v", result.Sections)
+	}
+	assertKubectlCall(t, calls, "get dynamographdeployment deepseek-v4-flash -o yaml")
+	assertKubectlCall(t, calls, "logs -l nvidia.com/dynamo-graph-deployment=deepseek-v4-flash --all-containers=true --tail 50")
+	assertKubectlCall(t, calls, "logs deepseek-v4-flash-abc --all-containers=true --tail 50")
+	assertKubectlCall(t, calls, "logs deepseek-v4-flash-abc --all-containers=true --previous --tail 50")
+}
+
 func TestTaskExecutorRetireDeployment(t *testing.T) {
 	deleter := &fakeDeleter{result: DeleteResult{Deleted: true, Message: "deleted"}}
 	executor := NewTaskExecutorWithKubernetes(&fakeDryRunner{}, &fakeApplier{}, &fakeWatcher{}, deleter)
@@ -247,6 +300,12 @@ type fakeDeleter struct {
 	err    error
 }
 
+type fakeDiagnosticsCollector struct {
+	ref    ResourceRef
+	result DiagnosticsResult
+	err    error
+}
+
 func (w *fakeWatcher) Wait(_ context.Context, ref ResourceRef) (WatchResult, error) {
 	w.ref = ref
 	if w.err != nil {
@@ -268,4 +327,12 @@ func (d *fakeDeleter) DeleteAndWait(_ context.Context, ref ResourceRef) (DeleteR
 		return DeleteResult{Deleted: true}, nil
 	}
 	return d.result, nil
+}
+
+func (c *fakeDiagnosticsCollector) Fetch(_ context.Context, ref ResourceRef) (DiagnosticsResult, error) {
+	c.ref = ref
+	if c.err != nil {
+		return DiagnosticsResult{}, c.err
+	}
+	return c.result, nil
 }
