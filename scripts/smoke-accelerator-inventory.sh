@@ -51,11 +51,11 @@ payload = json.load(open(path))
 payload['agentId'] = agent
 print(json.dumps(payload))
 PY
-curl -fsS "$BASE_URL/v1/clusters/$cluster_id/accelerator-inventory" -H 'Content-Type: application/json' --data-binary @temp/phase2-smoke/inventory.json >/dev/null
-curl -fsS "$BASE_URL/v1/clusters/$cluster_id/accelerator-inventory" | grep -q 'NVIDIA H200 SXM'
+curl -fsS "$BASE_URL/v1/clusters/$cluster_id/inventory" -H 'Content-Type: application/json' --data-binary @temp/phase2-smoke/inventory.json >/dev/null
+curl -fsS "$BASE_URL/v1/clusters/$cluster_id/inventory" | grep -q 'NVIDIA H200 SXM'
 
-pool_id=$(post_json /v1/accelerator-pools "{\"clusterId\":\"$cluster_id\",\"name\":\"h200\",\"nodeSelector\":{\"pool\":\"h200\"}}" | json_field id)
-curl -fsS "$BASE_URL/v1/accelerator-pools/summaries?clusterId=$cluster_id" | grep -q 'NVIDIA H200 SXM'
+pool_id=$(post_json /v1/pools "{\"clusterId\":\"$cluster_id\",\"name\":\"h200\",\"nodeSelector\":{\"pool\":\"h200\"}}" | json_field id)
+curl -fsS "$BASE_URL/v1/pools/summaries?clusterId=$cluster_id" | grep -q 'NVIDIA H200 SXM'
 
 artifact_id=$(post_json /v1/artifacts '{"family":"deepseek-v4","variant":"flash","revision":"rev1","pvcMountPath":"/models","pvcModelPath":"snapshot","quantization":"fp8"}' | json_field id)
 app_body=$(cat <<JSON
@@ -64,9 +64,9 @@ JSON
 )
 app_id=$(post_json /v1/apps "$app_body" | json_field id)
 
-tuning_id=$(post_json /v1/tuning-records "{\"servingApplicationId\":\"$app_id\",\"benchmarkSummary\":{\"throughputTokensPerSecond\":1234},\"plannerSettings\":{\"prefillTp\":4},\"recommendations\":[\"keep h200 pool\"],\"reason\":\"phase2 smoke\"}" | json_field id)
-curl -fsS "$BASE_URL/v1/tuning-records?servingApplicationId=$app_id" | grep -q "$tuning_id"
-curl -fsS "$BASE_URL/v1/apps/$app_id/observability/entry-points" | grep -q 'accelerator-inventory'
+tuning_id=$(post_json /v1/tunings "{\"servingApplicationId\":\"$app_id\",\"benchmarkSummary\":{\"throughputTokensPerSecond\":1234},\"plannerSettings\":{\"prefillTp\":4},\"recommendations\":[\"keep h200 pool\"],\"reason\":\"phase2 smoke\"}" | json_field id)
+curl -fsS "$BASE_URL/v1/tunings?servingApplicationId=$app_id" | grep -q "$tuning_id"
+curl -fsS "$BASE_URL/v1/apps/$app_id/observability/links" | grep -q 'accelerator-inventory'
 
 bad_cluster_id=$(post_json /v1/clusters '{"name":"partial"}' | json_field id)
 bad_agent_id=$(post_json /v1/agents/register "{\"clusterId\":\"$bad_cluster_id\",\"version\":\"fixture-agent\"}" | json_field id)
@@ -77,7 +77,7 @@ payload = json.load(open(path))
 payload['agentId'] = agent
 print(json.dumps(payload))
 PY
-curl -fsS "$BASE_URL/v1/clusters/$bad_cluster_id/accelerator-inventory" -H 'Content-Type: application/json' --data-binary @temp/phase2-smoke/bad-inventory.json >/dev/null
+curl -fsS "$BASE_URL/v1/clusters/$bad_cluster_id/inventory" -H 'Content-Type: application/json' --data-binary @temp/phase2-smoke/bad-inventory.json >/dev/null
 bad_app_body="${app_body//$cluster_id/$bad_cluster_id}"
 if curl -fsS "$BASE_URL/v1/apps" -H 'Content-Type: application/json' -d "$bad_app_body" > temp/phase2-smoke/bad-app.json 2>/dev/null; then
   echo "expected incompatible Serving Application validation to fail" >&2

@@ -55,11 +55,15 @@ func (r FakeInventoryReporter) Report(_ context.Context, clusterID string, agent
 						},
 					},
 				},
+				Connectivity: []management.AcceleratorInventoryConnectivity{
+					{Type: "nvlink", Present: true, Confidence: "observed", Summary: "synthetic nvlink connectivity"},
+					{Type: "rdma", Present: true, Confidence: "observed", Summary: "synthetic rdma connectivity"},
+				},
 				ObservedAt: observedAt,
 			},
 		},
 		ProbeStatuses: []management.AcceleratorInventoryProbe{
-			{Name: "fake-inventory", Status: "ok", Message: "synthetic local development inventory"},
+			{Name: "fake-inventory", Status: "ok", Message: "synthetic local development inventory with RDMA connectivity"},
 		},
 		CollectionMetadata: map[string]string{
 			"mode":      "fake",

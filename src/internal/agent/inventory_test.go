@@ -77,6 +77,9 @@ func TestRunnerReportsFakeInventoryAndCompletesPhase1Tasks(t *testing.T) {
 	if inventory.Freshness != management.AcceleratorInventoryFreshnessFresh || len(inventory.Nodes) != 1 || inventory.Nodes[0].Name != "fake-node-1" {
 		t.Fatalf("unexpected fake inventory: %+v", inventory)
 	}
+	if len(inventory.Nodes[0].Connectivity) != 2 || inventory.Nodes[0].Connectivity[1].Type != "rdma" || !inventory.Nodes[0].Connectivity[1].Present {
+		t.Fatalf("expected fake inventory to include RDMA connectivity: %+v", inventory.Nodes[0].Connectivity)
+	}
 	tasks, err := store.ListTasks(cluster.ID)
 	if err != nil {
 		t.Fatal(err)

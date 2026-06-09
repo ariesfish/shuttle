@@ -48,7 +48,7 @@ In fake executor mode, the Cluster Agent also reports a synthetic Accelerator In
 Run the complete local Phase 2 vertical workflow without live GPU hardware:
 
 ```bash
-./scripts/smoke-phase-2-accelerator-inventory.sh
+./scripts/smoke-accelerator-inventory.sh
 ```
 
 The script starts the Management API, registers a fixture-backed Cluster Agent record, reports representative H200 Accelerator Inventory, creates an Accelerator Pool, validates compatible and incompatible Serving Application paths, creates a Tuning Record, and reads production observability entry points. It uses fixtures in `src/testdata/accelerator-inventory/` and does not require real Kubernetes, NVIDIA devices, DCGM, NVLink, or RDMA visibility.
@@ -130,10 +130,10 @@ For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeplo
 List Accelerator Inventory, registered endpoints, observability entry points, and audit records:
 
 ```bash
-curl -s localhost:8080/v1/clusters/cluster-2/accelerator-inventory
+curl -s localhost:8080/v1/clusters/cluster-2/inventory
 curl -s localhost:8080/v1/endpoints
 curl -s localhost:8080/v1/apps/app-5/observability
-curl -s localhost:8080/v1/audit-records
+curl -s localhost:8080/v1/audit
 ```
 
 Apply/redeploy task completion creates or updates the endpoint registry entry. Retire task completion removes it. Observability entries return Grafana deep links and Prometheus query templates; the Management Plane does not ingest raw metrics.
