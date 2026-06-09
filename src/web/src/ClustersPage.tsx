@@ -127,6 +127,7 @@ function ClusterRow({ cluster, agent, inventory }: { cluster: InferenceCluster; 
         <div className="muted">{t('nodeCount')}: {inventory?.nodes?.length ?? 0}</div>
         <div className="muted">{t('nodeNames')}: {formatNodeNames(inventory)}</div>
         <div className="muted">{t('acceleratorResources')}: {formatAcceleratorResources(inventory)}</div>
+        <div className="muted">{t('nvidiaAccelerators')}: {formatNvidiaAccelerators(inventory)}</div>
         <div className="muted">{t('observedAt')}: {formatDate(inventory?.observedAt || agent?.lastInventoryObservedAt, t('never'))}</div>
         <div className="muted">{t('probeStatus')}: {formatProbeStatuses(inventory?.probeStatuses)}</div>
       </td>
@@ -163,6 +164,22 @@ function formatAcceleratorResources(inventory?: AcceleratorInventory) {
     }
   }
   return resources.size ? Array.from(resources).sort().join(', ') : '-';
+}
+
+function formatNvidiaAccelerators(inventory?: AcceleratorInventory) {
+  const summaries: string[] = [];
+  for (const node of inventory?.nodes ?? []) {
+    for (const accelerator of node.accelerators ?? []) {
+      if (accelerator.vendor !== 'nvidia') {
+        continue;
+      }
+      const product = accelerator.product || 'unknown NVIDIA';
+      const count = accelerator.deviceCount ? ` x${accelerator.deviceCount}` : '';
+      const memory = accelerator.memoryMiB ? ` ${accelerator.memoryMiB}MiB` : '';
+      summaries.push(`${product}${count}${memory}`);
+    }
+  }
+  return summaries.length ? summaries.join(', ') : '-';
 }
 
 function formatProbeStatuses(probes?: Array<{ name: string; status: string; message?: string }>) {

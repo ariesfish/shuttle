@@ -51,6 +51,10 @@ type kubectlNodeStatus struct {
 	Allocatable map[string]any `json:"allocatable"`
 }
 
+type kubectlPodList struct {
+	Items []struct{} `json:"items"`
+}
+
 func (r KubectlNodeInventoryReporter) Report(ctx context.Context, _ string, agent management.ClusterAgent) (management.ReportAcceleratorInventoryRequest, bool, error) {
 	observedAt := nodeInventoryNow(r.Now)
 	request := management.ReportAcceleratorInventoryRequest{
@@ -86,6 +90,7 @@ func (r KubectlNodeInventoryReporter) Report(ctx context.Context, _ string, agen
 	}
 	request.Nodes = nodes
 	request.ProbeStatuses = []management.AcceleratorInventoryProbe{{Name: "kubernetes-nodes", Status: "ok", Message: fmt.Sprintf("collected %d node(s)", len(nodes))}}
+	request.ProbeStatuses = append(request.ProbeStatuses, dcgmExporterProbeStatus(runCtx, runKubectl))
 	return request, true, nil
 }
 
@@ -107,13 +112,15 @@ func parseKubectlNodeInventory(contents []byte, observedAt time.Time) ([]managem
 		}
 		capacity := stringifyResourceMap(item.Status.Capacity)
 		allocatable := stringifyResourceMap(item.Status.Allocatable)
+		labels := cloneInventoryStringMap(item.Metadata.Labels)
 		nodes = append(nodes, management.AcceleratorInventoryNode{
 			Name:                     name,
-			Labels:                   cloneInventoryStringMap(item.Metadata.Labels),
+			Labels:                   labels,
 			Taints:                   formatNodeTaints(item.Spec.Taints),
 			Capacity:                 capacity,
 			Allocatable:              allocatable,
 			AcceleratorResourceNames: acceleratorResourceNames(capacity, allocatable),
+			Accelerators:             nvidiaAcceleratorsFromNode(labels, capacity, allocatable),
 			ObservedAt:               observedAt,
 		})
 	}
@@ -199,12 +206,103 @@ func isAcceleratorResourceName(name string) bool {
 	return strings.Contains(name, "gpu") || strings.Contains(name, "accelerator") || strings.Contains(name, "mig-")
 }
 
+func nvidiaAcceleratorsFromNode(labels map[string]string, capacity map[string]string, allocatable map[string]string) []management.AcceleratorInventoryAccelerator {
+	count := resourceQuantityInt(firstNonEmpty(capacity["nvidia.com/gpu"], allocatable["nvidia.com/gpu"], labels["nvidia.com/gpu.count"]))
+	product := firstNonEmpty(labels["nvidia.com/gpu.product"], labels["nvidia.com/gpu.name"])
+	memoryMiB := resourceQuantityInt(firstNonEmpty(labels["nvidia.com/gpu.memory"], labels["nvidia.com/gpu.memory-mib"], labels["nvidia.com/gpu.mem"]))
+	if count == 0 && product == "" && memoryMiB == 0 {
+		return nil
+	}
+	details := map[string]string{}
+	for _, key := range []string{
+		"nvidia.com/cuda.driver.major",
+		"nvidia.com/cuda.driver.minor",
+		"nvidia.com/cuda.runtime.major",
+		"nvidia.com/cuda.runtime.minor",
+		"nvidia.com/gpu.compute.major",
+		"nvidia.com/gpu.compute.minor",
+	} {
+		if value := strings.TrimSpace(labels[key]); value != "" {
+			details[key] = value
+		}
+	}
+	if driver := joinVersion(labels["nvidia.com/cuda.driver.major"], labels["nvidia.com/cuda.driver.minor"]); driver != "" {
+		details["driverVersion"] = driver
+	}
+	if cuda := joinVersion(labels["nvidia.com/cuda.runtime.major"], labels["nvidia.com/cuda.runtime.minor"]); cuda != "" {
+		details["cudaRuntimeVersion"] = cuda
+	}
+	if len(details) == 0 {
+		details = nil
+	}
+	return []management.AcceleratorInventoryAccelerator{{
+		Vendor:        "nvidia",
+		Product:       product,
+		DeviceCount:   count,
+		MemoryMiB:     memoryMiB,
+		VendorDetails: details,
+	}}
+}
+
+func dcgmExporterProbeStatus(ctx context.Context, runKubectl func(context.Context, ...string) ([]byte, error)) management.AcceleratorInventoryProbe {
+	output, err := runKubectl(ctx, "get", "pods", "-A", "-l", "app=nvidia-dcgm-exporter", "-o", "json")
+	if err != nil {
+		return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "warning", Message: boundedInventoryMessage(err.Error())}
+	}
+	var pods kubectlPodList
+	if err := json.Unmarshal(output, &pods); err != nil {
+		return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "warning", Message: boundedInventoryMessage("parse dcgm exporter pods: " + err.Error())}
+	}
+	if len(pods.Items) == 0 {
+		return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "warning", Message: "dcgm exporter not observed"}
+	}
+	return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "ok", Message: fmt.Sprintf("observed %d dcgm exporter pod(s)", len(pods.Items))}
+}
+
 func nodeInventoryWarning(err error) management.AcceleratorInventoryProbe {
 	message := err.Error()
 	if errors.Is(err, context.DeadlineExceeded) {
 		message = "kubectl node inventory timed out"
 	}
 	return management.AcceleratorInventoryProbe{Name: "kubernetes-nodes", Status: "warning", Message: boundedInventoryMessage(message)}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func joinVersion(major string, minor string) string {
+	major = strings.TrimSpace(major)
+	minor = strings.TrimSpace(minor)
+	if major == "" {
+		return ""
+	}
+	if minor == "" {
+		return major
+	}
+	return major + "." + minor
+}
+
+func resourceQuantityInt(value string) int {
+	value = strings.TrimSpace(value)
+	value = strings.TrimSuffix(value, "MiB")
+	value = strings.TrimSuffix(value, "Mi")
+	if value == "" {
+		return 0
+	}
+	var output int
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			break
+		}
+		output = output*10 + int(char-'0')
+	}
+	return output
 }
 
 func boundedInventoryMessage(message string) string {
