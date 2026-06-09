@@ -148,6 +148,22 @@ export interface CreateServingApplicationInput {
   optimization: OptimizationIntent;
 }
 
+export interface ServingApplicationCreationPlan {
+  artifactId: string;
+  recipe: ServingRecipe;
+  model: ModelIntent;
+  runtime: RuntimeIntent;
+  defaults: {
+    namespace: string;
+    protocol: string;
+    exposure: string;
+    optimizationTarget: string;
+    profilingMode: string;
+  };
+  creatable: boolean;
+  message?: string;
+}
+
 export interface Task {
   id: string;
   clusterId: string;
@@ -250,6 +266,7 @@ export const api = {
     body: JSON.stringify(input),
   }),
   listRecipes: () => request<ServingRecipe[]>('/v1/recipes'),
+  listServingApplicationCreationPlans: (artifactId: string) => request<ServingApplicationCreationPlan[]>(`/v1/model-artifacts/${artifactId}/serving-application-plans`),
   listServingApplications: () => request<ServingApplication[]>('/v1/serving-applications'),
   createServingApplication: (input: CreateServingApplicationInput) => request<ServingApplication>('/v1/serving-applications', {
     method: 'POST',
