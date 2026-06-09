@@ -50,6 +50,7 @@ type AcceleratorInventoryFreshness string
 
 const (
 	AcceleratorInventoryFreshnessFresh       AcceleratorInventoryFreshness = "fresh"
+	AcceleratorInventoryFreshnessStale       AcceleratorInventoryFreshness = "stale"
 	AcceleratorInventoryFreshnessMissing     AcceleratorInventoryFreshness = "missing"
 	AcceleratorInventoryFreshnessUnsupported AcceleratorInventoryFreshness = "unsupported"
 )
@@ -62,6 +63,7 @@ type AcceleratorInventory struct {
 	ObservedAt         time.Time                     `json:"observedAt"`
 	ReportedAt         time.Time                     `json:"reportedAt"`
 	Freshness          AcceleratorInventoryFreshness `json:"freshness"`
+	RevisionCount      int                           `json:"revisionCount,omitempty"`
 	Nodes              []AcceleratorInventoryNode    `json:"nodes"`
 	ProbeStatuses      []AcceleratorInventoryProbe   `json:"probeStatuses,omitempty"`
 	CollectionMetadata map[string]string             `json:"collectionMetadata,omitempty"`

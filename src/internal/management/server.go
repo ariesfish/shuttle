@@ -42,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/clusters", s.createCluster)
 	mux.HandleFunc("GET /v1/clusters", s.listClusters)
 	mux.HandleFunc("GET /v1/clusters/{clusterID}/accelerator-inventory", s.getAcceleratorInventory)
+	mux.HandleFunc("GET /v1/clusters/{clusterID}/accelerator-inventory/revisions", s.listAcceleratorInventoryRevisions)
 	mux.HandleFunc("POST /v1/clusters/{clusterID}/accelerator-inventory", s.reportAcceleratorInventory)
 	mux.HandleFunc("POST /v1/agents/register", s.registerAgent)
 	mux.HandleFunc("GET /v1/agents", s.listAgents)
@@ -105,6 +106,11 @@ func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getAcceleratorInventory(w http.ResponseWriter, r *http.Request) {
 	inventory, err := s.store.GetAcceleratorInventory(r.PathValue("clusterID"))
 	writeResult(w, inventory, http.StatusOK, err)
+}
+
+func (s *Server) listAcceleratorInventoryRevisions(w http.ResponseWriter, r *http.Request) {
+	revisions, err := s.store.ListAcceleratorInventoryRevisions(r.PathValue("clusterID"))
+	writeResult(w, revisions, http.StatusOK, err)
 }
 
 func (s *Server) reportAcceleratorInventory(w http.ResponseWriter, r *http.Request) {

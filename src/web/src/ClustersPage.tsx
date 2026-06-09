@@ -121,9 +121,11 @@ function ClusterRow({ cluster, agent, inventory }: { cluster: InferenceCluster; 
         <div className="muted">{t('lastHeartbeat')}: {formatDate(agent?.lastHeartbeat, t('never'))}</div>
         <div className="muted">{t('capabilities')}: {formatCapabilities(agent?.capabilities)}</div>
         <div className="muted">{t('inventoryRevision')}: {agent?.lastInventoryRevision || '-'}</div>
+        <div className="muted">{t('inventoryFreshness')}: {agent?.lastInventoryFreshness || '-'}</div>
       </td>
       <td>
         <span className={`badge ${inventory?.freshness === 'fresh' ? '' : 'muted'}`}>{inventory?.freshness || agent?.lastInventoryFreshness || t('missing')}</span>
+        <div className="muted">{t('revisionCount')}: {inventory?.revisionCount ?? 0}</div>
         <div className="muted">{t('nodeCount')}: {inventory?.nodes?.length ?? 0}</div>
         <div className="muted">{t('nodeNames')}: {formatNodeNames(inventory)}</div>
         <div className="muted">{t('acceleratorResources')}: {formatAcceleratorResources(inventory)}</div>

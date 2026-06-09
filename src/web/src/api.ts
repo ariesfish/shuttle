@@ -29,7 +29,8 @@ export interface AcceleratorInventory {
   revision?: string;
   observedAt?: string;
   reportedAt?: string;
-  freshness: 'fresh' | 'missing' | 'unsupported' | string;
+  freshness: 'fresh' | 'stale' | 'missing' | 'unsupported' | string;
+  revisionCount?: number;
   nodes?: AcceleratorInventoryNode[];
   probeStatuses?: AcceleratorInventoryProbe[];
   collectionMetadata?: Record<string, string>;
@@ -300,6 +301,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   listClusters: () => request<InferenceCluster[]>('/v1/clusters'),
   getAcceleratorInventory: (clusterId: string) => request<AcceleratorInventory>(`/v1/clusters/${clusterId}/accelerator-inventory`),
+  listAcceleratorInventoryRevisions: (clusterId: string) => request<AcceleratorInventory[]>(`/v1/clusters/${clusterId}/accelerator-inventory/revisions`),
   createCluster: (input: CreateClusterInput) => request<InferenceCluster>('/v1/clusters', {
     method: 'POST',
     body: JSON.stringify(input),

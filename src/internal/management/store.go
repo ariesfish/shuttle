@@ -59,6 +59,7 @@ type ClusterAgentStore interface {
 type AcceleratorInventoryStore interface {
 	ReportAcceleratorInventory(clusterID string, req ReportAcceleratorInventoryRequest) (AcceleratorInventory, error)
 	GetAcceleratorInventory(clusterID string) (AcceleratorInventory, error)
+	ListAcceleratorInventoryRevisions(clusterID string) ([]AcceleratorInventory, error)
 }
 
 type ModelArtifactStore interface {
@@ -106,17 +107,18 @@ type FileStore struct {
 }
 
 type storeData struct {
-	NextID               int                                     `json:"nextId"`
-	Projects             map[string]Project                      `json:"projects"`
-	Clusters             map[string]InferenceCluster             `json:"clusters"`
-	Agents               map[string]ClusterAgent                 `json:"agents"`
-	ModelArtifacts       map[string]ModelArtifact                `json:"modelArtifacts"`
-	ServingApplications  map[string]ServingApplication           `json:"servingApplications"`
-	Transitions          map[string]ServingApplicationTransition `json:"transitions"`
-	Endpoints            map[string]EndpointRegistryEntry        `json:"endpoints"`
-	AuditRecords         map[string]AuditRecord                  `json:"auditRecords"`
-	Tasks                map[string]Task                         `json:"tasks"`
-	AcceleratorInventory map[string]AcceleratorInventory         `json:"acceleratorInventory"`
+	NextID                        int                                     `json:"nextId"`
+	Projects                      map[string]Project                      `json:"projects"`
+	Clusters                      map[string]InferenceCluster             `json:"clusters"`
+	Agents                        map[string]ClusterAgent                 `json:"agents"`
+	ModelArtifacts                map[string]ModelArtifact                `json:"modelArtifacts"`
+	ServingApplications           map[string]ServingApplication           `json:"servingApplications"`
+	Transitions                   map[string]ServingApplicationTransition `json:"transitions"`
+	Endpoints                     map[string]EndpointRegistryEntry        `json:"endpoints"`
+	AuditRecords                  map[string]AuditRecord                  `json:"auditRecords"`
+	Tasks                         map[string]Task                         `json:"tasks"`
+	AcceleratorInventory          map[string]AcceleratorInventory         `json:"acceleratorInventory"`
+	AcceleratorInventoryRevisions map[string][]AcceleratorInventory       `json:"acceleratorInventoryRevisions"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -135,17 +137,18 @@ func NewFileStoreWithRecipes(path string, recipes *RecipeRegistry) (*FileStore, 
 
 func newStoreData() storeData {
 	return storeData{
-		NextID:               1,
-		Projects:             map[string]Project{},
-		Clusters:             map[string]InferenceCluster{},
-		Agents:               map[string]ClusterAgent{},
-		ModelArtifacts:       map[string]ModelArtifact{},
-		ServingApplications:  map[string]ServingApplication{},
-		Transitions:          map[string]ServingApplicationTransition{},
-		Endpoints:            map[string]EndpointRegistryEntry{},
-		AuditRecords:         map[string]AuditRecord{},
-		Tasks:                map[string]Task{},
-		AcceleratorInventory: map[string]AcceleratorInventory{},
+		NextID:                        1,
+		Projects:                      map[string]Project{},
+		Clusters:                      map[string]InferenceCluster{},
+		Agents:                        map[string]ClusterAgent{},
+		ModelArtifacts:                map[string]ModelArtifact{},
+		ServingApplications:           map[string]ServingApplication{},
+		Transitions:                   map[string]ServingApplicationTransition{},
+		Endpoints:                     map[string]EndpointRegistryEntry{},
+		AuditRecords:                  map[string]AuditRecord{},
+		Tasks:                         map[string]Task{},
+		AcceleratorInventory:          map[string]AcceleratorInventory{},
+		AcceleratorInventoryRevisions: map[string][]AcceleratorInventory{},
 	}
 }
 
@@ -344,6 +347,17 @@ func (s *FileStore) ReportAcceleratorInventory(clusterID string, req ReportAccel
 	if inventory.Revision == "" {
 		inventory.Revision = acceleratorInventoryRevision(inventory)
 	}
+	previous := s.data.AcceleratorInventory[clusterID]
+	revisions := s.data.AcceleratorInventoryRevisions[clusterID]
+	if previous.Revision != inventory.Revision {
+		revisions = append([]AcceleratorInventory{inventory}, revisions...)
+		if len(revisions) > 10 {
+			revisions = revisions[:10]
+		}
+		s.data.AcceleratorInventoryRevisions[clusterID] = revisions
+		s.recordAuditLocked(req.AgentID, "accelerator_inventory.report", "cluster:"+clusterID, map[string]any{"revision": inventory.Revision, "previousRevision": previous.Revision})
+	}
+	inventory.RevisionCount = len(revisions)
 	s.data.AcceleratorInventory[clusterID] = inventory
 	agent.LastInventoryRevision = inventory.Revision
 	agent.LastInventoryFreshness = string(inventory.Freshness)
@@ -363,9 +377,33 @@ func (s *FileStore) GetAcceleratorInventory(clusterID string) (AcceleratorInvent
 	}
 	inventory, ok := s.data.AcceleratorInventory[clusterID]
 	if !ok {
-		return AcceleratorInventory{ClusterID: clusterID, Freshness: AcceleratorInventoryFreshnessMissing}, nil
+		freshness := AcceleratorInventoryFreshnessUnsupported
+		for _, agent := range s.data.Agents {
+			if agent.ClusterID == clusterID && strings.TrimSpace(agent.LastInventoryFreshness) != "" {
+				freshness = AcceleratorInventoryFreshnessMissing
+				break
+			}
+		}
+		return AcceleratorInventory{ClusterID: clusterID, Freshness: freshness}, nil
+	}
+	inventory.RevisionCount = len(s.data.AcceleratorInventoryRevisions[clusterID])
+	if isInventoryStale(s.now().UTC(), inventory.ReportedAt) {
+		inventory.Freshness = AcceleratorInventoryFreshnessStale
 	}
 	return inventory, nil
+}
+
+func (s *FileStore) ListAcceleratorInventoryRevisions(clusterID string) ([]AcceleratorInventory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.data.Clusters[clusterID]; !ok {
+		return nil, ErrNotFound
+	}
+	revisions := s.data.AcceleratorInventoryRevisions[clusterID]
+	output := make([]AcceleratorInventory, len(revisions))
+	copy(output, revisions)
+	return output, nil
 }
 
 func (s *FileStore) CreateModelArtifact(req CreateModelArtifactRequest) (ModelArtifact, error) {
@@ -567,6 +605,11 @@ func (s *FileStore) RecordAudit(actor, action, resource string, metadata map[str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	record := s.recordAuditLocked(actor, action, resource, metadata)
+	return record, s.saveLocked()
+}
+
+func (s *FileStore) recordAuditLocked(actor, action, resource string, metadata map[string]any) AuditRecord {
 	now := s.now().UTC()
 	record := AuditRecord{
 		ID:        s.nextID("audit"),
@@ -577,7 +620,7 @@ func (s *FileStore) RecordAudit(actor, action, resource string, metadata map[str
 		CreatedAt: now,
 	}
 	s.data.AuditRecords[record.ID] = record
-	return record, s.saveLocked()
+	return record
 }
 
 func (s *FileStore) CreateTask(req CreateTaskRequest) (Task, error) {
@@ -728,6 +771,10 @@ func (s *FileStore) nextID(prefix string) string {
 	id := fmt.Sprintf("%s-%d", prefix, s.data.NextID)
 	s.data.NextID++
 	return id
+}
+
+func isInventoryStale(now time.Time, reportedAt time.Time) bool {
+	return !reportedAt.IsZero() && now.Sub(reportedAt.UTC()) > 5*time.Minute
 }
 
 func acceleratorInventoryRevision(inventory AcceleratorInventory) string {
