@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,7 +19,8 @@ func main() {
 	addr := flag.String("addr", envOrDefault("MANAGEMENT_API_ADDR", ":8080"), "HTTP listen address")
 	dataPath := flag.String("data", envOrDefault("MANAGEMENT_API_DATA", "data/management.json"), "JSON data file path")
 	postgresDSN := flag.String("postgres-dsn", os.Getenv("MANAGEMENT_API_POSTGRES_DSN"), "Postgres DSN; when set, stores state in Postgres")
-	authToken := flag.String("auth-token", os.Getenv("MANAGEMENT_API_AUTH_TOKEN"), "Bearer token for API auth; when empty, auth is disabled")
+	authToken := flag.String("auth-token", os.Getenv("MANAGEMENT_API_AUTH_TOKEN"), "Bearer token for API auth; when empty and auth-tokens is empty, auth is disabled")
+	authTokens := flag.String("auth-tokens", os.Getenv("MANAGEMENT_API_TOKENS"), "Comma-separated token:actor:role entries for API auth")
 	corsOrigin := flag.String("cors-origin", envOrDefault("MANAGEMENT_API_CORS_ORIGIN", "*"), "Allowed CORS origin")
 	flag.Parse()
 
@@ -35,9 +37,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	authConfig := management.AuthConfig{Enabled: *authToken != "" || *authTokens != "", Token: *authToken, Tokens: parseAuthTokens(*authTokens)}
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           management.NewServerWithOptions(store, logger, management.AuthConfig{Enabled: *authToken != "", Token: *authToken}, management.CORSConfig{AllowedOrigin: *corsOrigin}).Routes(),
+		Handler:           management.NewServerWithOptions(store, logger, authConfig, management.CORSConfig{AllowedOrigin: *corsOrigin}).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -66,4 +69,28 @@ func envOrDefault(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseAuthTokens(value string) map[string]management.Actor {
+	actors := map[string]management.Actor{}
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.Split(entry, ":")
+		token := strings.TrimSpace(parts[0])
+		if token == "" {
+			continue
+		}
+		actor := management.Actor{Name: "api-token", Role: "viewer"}
+		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+			actor.Name = strings.TrimSpace(parts[1])
+		}
+		if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
+			actor.Role = strings.TrimSpace(parts[2])
+		}
+		actors[token] = actor
+	}
+	return actors
 }

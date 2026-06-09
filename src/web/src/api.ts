@@ -238,8 +238,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  headers.set('X-Actor', 'web-console');
-  headers.set('X-Role', 'admin');
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));

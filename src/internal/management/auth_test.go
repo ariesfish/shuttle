@@ -27,12 +27,12 @@ func TestAuthRejectsMissingBearerToken(t *testing.T) {
 	}
 }
 
-func TestAuthAllowsAdminAndRecordsAudit(t *testing.T) {
+func TestAuthAllowsMappedAdminAndRecordsAudit(t *testing.T) {
 	store, err := NewFileStore("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewServerWithAuth(store, slog.Default(), AuthConfig{Enabled: true, Token: "secret"}).Routes())
+	server := httptest.NewServer(NewServerWithAuth(store, slog.Default(), AuthConfig{Enabled: true, Tokens: map[string]Actor{"secret": {Name: "alice", Role: "admin"}}}).Routes())
 	defer server.Close()
 
 	body := bytes.NewBufferString(`{"name":"platform"}`)
@@ -42,8 +42,8 @@ func TestAuthAllowsAdminAndRecordsAudit(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer secret")
-	req.Header.Set("X-Actor", "alice")
-	req.Header.Set("X-Role", "admin")
+	req.Header.Set("X-Actor", "mallory")
+	req.Header.Set("X-Role", "viewer")
 	resp, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -60,5 +60,31 @@ func TestAuthAllowsAdminAndRecordsAudit(t *testing.T) {
 	if len(records) != 1 || records[0].Actor != "alice" || records[0].Action != "create_project" {
 		encoded, _ := json.Marshal(records)
 		t.Fatalf("unexpected audit records: %s", encoded)
+	}
+}
+
+func TestAuthDoesNotAllowHeaderRoleEscalation(t *testing.T) {
+	store, err := NewFileStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServerWithAuth(store, slog.Default(), AuthConfig{Enabled: true, Tokens: map[string]Actor{"viewer-token": {Name: "eve", Role: "viewer"}}}).Routes())
+	defer server.Close()
+
+	body := bytes.NewBufferString(`{"name":"platform"}`)
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/projects", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer viewer-token")
+	req.Header.Set("X-Role", "admin")
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", resp.StatusCode)
 	}
 }

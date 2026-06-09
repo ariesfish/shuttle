@@ -9,6 +9,7 @@ import (
 type AuthConfig struct {
 	Enabled bool
 	Token   string
+	Tokens  map[string]Actor
 }
 
 type Actor struct {
@@ -47,14 +48,15 @@ func authMiddleware(config AuthConfig, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !validBearerToken(r.Header.Get("Authorization"), config.Token) {
+		token, ok := bearerToken(r.Header.Get("Authorization"))
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "missing or invalid bearer token")
 			return
 		}
-		actor := Actor{
-			Name:      headerOrDefault(r, "X-Actor", "api-user"),
-			ProjectID: r.Header.Get("X-Project-ID"),
-			Role:      headerOrDefault(r, "X-Role", "viewer"),
+		actor, ok := config.ActorForToken(token)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "missing or invalid bearer token")
+			return
 		}
 		next.ServeHTTP(w, r.WithContext(withActor(r.Context(), actor)))
 	})
@@ -71,12 +73,40 @@ func requireRole(w http.ResponseWriter, r *http.Request, roles ...string) bool {
 	return false
 }
 
-func validBearerToken(header string, token string) bool {
+func (config AuthConfig) ActorForToken(token string) (Actor, bool) {
+	token = strings.TrimSpace(token)
 	if token == "" {
-		return false
+		return Actor{}, false
 	}
+	if actor, ok := config.Tokens[token]; ok {
+		return normalizedActor(actor), true
+	}
+	if config.Token != "" && token == config.Token {
+		return Actor{Name: "api-token", Role: "admin"}, true
+	}
+	return Actor{}, false
+}
+
+func bearerToken(header string) (string, bool) {
 	prefix := "Bearer "
-	return strings.HasPrefix(header, prefix) && strings.TrimSpace(strings.TrimPrefix(header, prefix)) == token
+	if !strings.HasPrefix(header, prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return token, token != ""
+}
+
+func normalizedActor(actor Actor) Actor {
+	actor.Name = strings.TrimSpace(actor.Name)
+	actor.ProjectID = strings.TrimSpace(actor.ProjectID)
+	actor.Role = strings.TrimSpace(actor.Role)
+	if actor.Name == "" {
+		actor.Name = "api-token"
+	}
+	if actor.Role == "" {
+		actor.Role = "viewer"
+	}
+	return actor
 }
 
 func headerOrDefault(r *http.Request, name string, fallback string) string {
