@@ -1,6 +1,7 @@
 package task
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +23,45 @@ type DTO struct {
 	Payload   map[string]any
 	Result    map[string]any
 	Error     string
+}
+
+type encodedPayload struct {
+	ServingApplicationID string            `json:"servingApplicationId,omitempty"`
+	ResourceName         string            `json:"resourceName,omitempty"`
+	Namespace            string            `json:"namespace,omitempty"`
+	EndpointName         string            `json:"endpointName,omitempty"`
+	Protocol             string            `json:"protocol,omitempty"`
+	Exposure             string            `json:"exposure,omitempty"`
+	Manifests            []encodedManifest `json:"manifests,omitempty"`
+}
+
+type encodedManifest struct {
+	Name    string `json:"name,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
+type encodedResult struct {
+	Mode               string                      `json:"mode,omitempty"`
+	ManifestCount      int                         `json:"manifestCount,omitempty"`
+	Stdout             string                      `json:"stdout,omitempty"`
+	Stderr             string                      `json:"stderr,omitempty"`
+	Resource           string                      `json:"resource,omitempty"`
+	ResourceName       string                      `json:"resourceName,omitempty"`
+	Namespace          string                      `json:"namespace,omitempty"`
+	EndpointURL        string                      `json:"endpointUrl,omitempty"`
+	Phase              string                      `json:"phase,omitempty"`
+	Message            string                      `json:"message,omitempty"`
+	DeletedBeforeApply bool                        `json:"deletedBeforeApply,omitempty"`
+	DeleteMessage      string                      `json:"deleteMessage,omitempty"`
+	Deleted            bool                        `json:"deleted,omitempty"`
+	Sections           []encodedDiagnosticsSection `json:"sections,omitempty"`
+	HandledAt          string                      `json:"handledAt,omitempty"`
+}
+
+type encodedDiagnosticsSection struct {
+	Name   string `json:"name,omitempty"`
+	Output string `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 type Envelope struct {
@@ -199,42 +239,39 @@ func DecodePayload(dto DTO) (Payload, error) {
 }
 
 func decodePayload(registry Registry, dto DTO) (Payload, error) {
+	payloadFields, err := decodePayloadFields(dto.Payload)
+	if err != nil {
+		return nil, err
+	}
+	appID := strings.TrimSpace(payloadFields.ServingApplicationID)
+	if appID == "" && registry.PayloadKindFor(dto.Type) != PayloadKindNone {
+		return nil, fmt.Errorf("%w: servingApplicationId is required", ErrInvalidPayload)
+	}
+	resource, err := resourceFromPayloadFields(payloadFields)
+	if err != nil && registry.PayloadKindFor(dto.Type) != PayloadKindNone {
+		return nil, err
+	}
+
 	switch registry.PayloadKindFor(dto.Type) {
 	case PayloadKindRenderedDeployment:
-		appID, _ := dto.Payload["servingApplicationId"].(string)
-		if strings.TrimSpace(appID) == "" {
-			return nil, fmt.Errorf("%w: servingApplicationId is required", ErrInvalidPayload)
-		}
-		resource, err := resourceFromMap(dto.Payload)
-		if err != nil {
-			return nil, err
-		}
-		manifests, err := manifestsFromMap(dto.Payload)
+		manifests, err := manifestsFromPayloadFields(payloadFields)
 		if err != nil {
 			return nil, err
 		}
 		payload := RenderedDeploymentPayload{
 			TypeValue:                 dto.Type,
-			ServingApplicationIDValue: strings.TrimSpace(appID),
+			ServingApplicationIDValue: appID,
 			ResourceValue:             resource,
 			EndpointValue: EndpointIntent{
-				Name:     stringField(dto.Payload, "endpointName"),
-				Protocol: stringField(dto.Payload, "protocol"),
-				Exposure: stringField(dto.Payload, "exposure"),
+				Name:     strings.TrimSpace(payloadFields.EndpointName),
+				Protocol: strings.TrimSpace(payloadFields.Protocol),
+				Exposure: strings.TrimSpace(payloadFields.Exposure),
 			},
 			ManifestValues: manifests,
 		}
 		return payload, nil
 	case PayloadKindResource:
-		appID, _ := dto.Payload["servingApplicationId"].(string)
-		if strings.TrimSpace(appID) == "" {
-			return nil, fmt.Errorf("%w: servingApplicationId is required", ErrInvalidPayload)
-		}
-		resource, err := resourceFromMap(dto.Payload)
-		if err != nil {
-			return nil, err
-		}
-		payload := ResourcePayload{TypeValue: dto.Type, ServingApplicationIDValue: strings.TrimSpace(appID), ResourceValue: resource}
+		payload := ResourcePayload{TypeValue: dto.Type, ServingApplicationIDValue: appID, ResourceValue: resource}
 		return payload, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, dto.Type)
@@ -246,75 +283,72 @@ func DecodeResult(dto DTO) (Result, error) {
 }
 
 func decodeResult(registry Registry, dto DTO) (Result, error) {
+	resultFields, err := decodeResultFields(dto.Result)
+	if err != nil {
+		return nil, err
+	}
 	switch registry.PayloadKindFor(dto.Type) {
 	case PayloadKindRenderedDeployment:
 		if dto.Type == TaskTypePreviewDeploymentDiff {
-			return PreviewResult{ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), HandledAt: parseHandledAt(dto.Result)}, nil
+			return PreviewResult{ManifestCount: resultFields.ManifestCount, Stdout: strings.TrimSpace(resultFields.Stdout), Stderr: strings.TrimSpace(resultFields.Stderr), HandledAt: parseHandledAtValue(resultFields.HandledAt)}, nil
 		}
-		resource, err := resourceFromMap(dto.Result)
+		resource, err := resourceFromResultOrPayload(resultFields, dto.Payload)
 		if err != nil {
-			resource, err = resourceFromMap(dto.Payload)
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
-		return DeploymentResult{TypeValue: dto.Type, ManifestCount: intField(dto.Result, "manifestCount"), Stdout: stringField(dto.Result, "stdout"), Stderr: stringField(dto.Result, "stderr"), Resource: resource, EndpointURL: stringField(dto.Result, "endpointUrl"), Phase: stringField(dto.Result, "phase"), Message: stringField(dto.Result, "message"), DeletedBeforeApply: boolField(dto.Result, "deletedBeforeApply"), DeleteMessage: stringField(dto.Result, "deleteMessage"), HandledAt: parseHandledAt(dto.Result)}, nil
+		return DeploymentResult{TypeValue: dto.Type, ManifestCount: resultFields.ManifestCount, Stdout: strings.TrimSpace(resultFields.Stdout), Stderr: strings.TrimSpace(resultFields.Stderr), Resource: resource, EndpointURL: strings.TrimSpace(resultFields.EndpointURL), Phase: strings.TrimSpace(resultFields.Phase), Message: strings.TrimSpace(resultFields.Message), DeletedBeforeApply: resultFields.DeletedBeforeApply, DeleteMessage: strings.TrimSpace(resultFields.DeleteMessage), HandledAt: parseHandledAtValue(resultFields.HandledAt)}, nil
 	case PayloadKindResource:
-		resource, err := resourceFromMap(dto.Result)
+		resource, err := resourceFromResultOrPayload(resultFields, dto.Payload)
 		if err != nil {
-			resource, err = resourceFromMap(dto.Payload)
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 		if dto.Type == TaskTypeFetchDiagnostics {
-			return DiagnosticsResult{Resource: resource, Sections: sectionsFromMap(dto.Result), HandledAt: parseHandledAt(dto.Result)}, nil
+			return DiagnosticsResult{Resource: resource, Sections: diagnosticsSectionsFromFields(resultFields), HandledAt: parseHandledAtValue(resultFields.HandledAt)}, nil
 		}
-		return RetireResult{Resource: resource, Deleted: boolField(dto.Result, "deleted"), Message: stringField(dto.Result, "message"), HandledAt: parseHandledAt(dto.Result)}, nil
+		return RetireResult{Resource: resource, Deleted: resultFields.Deleted, Message: strings.TrimSpace(resultFields.Message), HandledAt: parseHandledAtValue(resultFields.HandledAt)}, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, dto.Type)
 	}
 }
 
 func EncodePayload(payload Payload) map[string]any {
-	base := map[string]any{
-		"servingApplicationId": payload.ServingApplicationID(),
-		"resourceName":         payload.Resource().Name,
-		"namespace":            payload.Resource().Namespace,
+	fields := encodedPayload{
+		ServingApplicationID: payload.ServingApplicationID(),
+		ResourceName:         payload.Resource().Name,
+		Namespace:            payload.Resource().Namespace,
 	}
 	if rendered, ok := payload.(RenderedDeploymentPayload); ok {
 		endpoint := rendered.Endpoint()
-		base["endpointName"] = endpoint.Name
-		base["protocol"] = endpoint.Protocol
-		base["exposure"] = endpoint.Exposure
-		manifests := make([]any, 0, len(rendered.ManifestValues))
+		fields.EndpointName = endpoint.Name
+		fields.Protocol = endpoint.Protocol
+		fields.Exposure = endpoint.Exposure
+		fields.Manifests = make([]encodedManifest, 0, len(rendered.ManifestValues))
 		for _, manifest := range rendered.ManifestValues {
-			manifests = append(manifests, map[string]any{"name": manifest.Name, "content": manifest.Content})
+			fields.Manifests = append(fields.Manifests, encodedManifest{Name: manifest.Name, Content: manifest.Content})
 		}
-		base["manifests"] = manifests
 	}
-	return base
+	return encodeFields(fields)
 }
 
 func EncodeResult(result Result) map[string]any {
 	switch value := result.(type) {
 	case PreviewResult:
-		return withHandledAt(map[string]any{"mode": "server-side-dry-run", "manifestCount": value.ManifestCount, "stdout": value.Stdout, "stderr": value.Stderr}, value.HandledAt)
+		return encodeResultFields(encodedResult{Mode: "server-side-dry-run", ManifestCount: value.ManifestCount, Stdout: value.Stdout, Stderr: value.Stderr}, value.HandledAt)
 	case DeploymentResult:
-		output := map[string]any{"mode": deploymentMode(value.TypeValue), "manifestCount": value.ManifestCount, "stdout": value.Stdout, "stderr": value.Stderr, "resource": value.Resource.Name, "namespace": value.Resource.Namespace, "endpointUrl": value.EndpointURL, "phase": value.Phase, "message": value.Message}
+		fields := encodedResult{Mode: deploymentMode(value.TypeValue), ManifestCount: value.ManifestCount, Stdout: value.Stdout, Stderr: value.Stderr, Resource: value.Resource.Name, Namespace: value.Resource.Namespace, EndpointURL: value.EndpointURL, Phase: value.Phase, Message: value.Message}
 		if value.TypeValue == TaskTypeDeleteBeforeApply {
-			output["deletedBeforeApply"] = value.DeletedBeforeApply
-			output["deleteMessage"] = value.DeleteMessage
+			fields.DeletedBeforeApply = value.DeletedBeforeApply
+			fields.DeleteMessage = value.DeleteMessage
 		}
-		return withHandledAt(output, value.HandledAt)
+		return encodeResultFields(fields, value.HandledAt)
 	case RetireResult:
-		return withHandledAt(map[string]any{"mode": "retire", "resource": value.Resource.Name, "namespace": value.Resource.Namespace, "deleted": value.Deleted, "message": value.Message}, value.HandledAt)
+		return encodeResultFields(encodedResult{Mode: "retire", Resource: value.Resource.Name, Namespace: value.Resource.Namespace, Deleted: value.Deleted, Message: value.Message}, value.HandledAt)
 	case DiagnosticsResult:
-		sections := make([]any, 0, len(value.Sections))
+		sections := make([]encodedDiagnosticsSection, 0, len(value.Sections))
 		for _, section := range value.Sections {
-			sections = append(sections, map[string]any{"name": section.Name, "output": section.Output, "error": section.Error})
+			sections = append(sections, encodedDiagnosticsSection{Name: section.Name, Output: section.Output, Error: section.Error})
 		}
-		return withHandledAt(map[string]any{"mode": "diagnostics", "resource": value.Resource.Name, "namespace": value.Resource.Namespace, "sections": sections}, value.HandledAt)
+		return encodeResultFields(encodedResult{Mode: "diagnostics", Resource: value.Resource.Name, Namespace: value.Resource.Namespace, Sections: sections}, value.HandledAt)
 	default:
 		return map[string]any{}
 	}
@@ -344,87 +378,133 @@ func normalizeManifests(input []Manifest) []Manifest {
 	return manifests
 }
 
-func resourceFromMap(values map[string]any) (ResourceRef, error) {
-	name := stringField(values, "resourceName")
-	if name == "" {
-		name = stringField(values, "resource")
+func decodePayloadFields(values map[string]any) (encodedPayload, error) {
+	var fields encodedPayload
+	if err := decodeFields(values, &fields); err != nil {
+		return encodedPayload{}, fmt.Errorf("%w: %v", ErrInvalidPayload, err)
 	}
-	ref := ResourceRef{Name: name, Namespace: stringField(values, "namespace")}
+	return fields, nil
+}
+
+func decodeResultFields(values map[string]any) (encodedResult, error) {
+	var fields encodedResult
+	if err := decodeFields(values, &fields); err != nil {
+		return encodedResult{}, fmt.Errorf("%w: %v", ErrInvalidResult, err)
+	}
+	return fields, nil
+}
+
+func decodeFields[T any](values map[string]any, target *T) error {
+	if values == nil {
+		values = map[string]any{}
+	}
+	bytes, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bytes, target)
+}
+
+func encodeFields[T any](fields T) map[string]any {
+	bytes, err := json.Marshal(fields)
+	if err != nil {
+		return map[string]any{}
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(bytes)))
+	decoder.UseNumber()
+	var output map[string]any
+	if err := decoder.Decode(&output); err != nil {
+		return map[string]any{}
+	}
+	return normalizeEncodedMap(output)
+}
+
+func normalizeEncodedMap(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = normalizeEncodedValue(value)
+	}
+	return output
+}
+
+func normalizeEncodedValue(value any) any {
+	switch typed := value.(type) {
+	case json.Number:
+		if intValue, err := typed.Int64(); err == nil {
+			return int(intValue)
+		}
+		floatValue, _ := typed.Float64()
+		return floatValue
+	case []any:
+		items := make([]any, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, normalizeEncodedValue(item))
+		}
+		return items
+	case map[string]any:
+		return normalizeEncodedMap(typed)
+	default:
+		return value
+	}
+}
+
+func encodeResultFields(fields encodedResult, handledAt time.Time) map[string]any {
+	if handledAt.IsZero() {
+		handledAt = time.Now().UTC()
+	}
+	fields.HandledAt = handledAt.UTC().Format(time.RFC3339)
+	return encodeFields(fields)
+}
+
+func resourceFromPayloadFields(fields encodedPayload) (ResourceRef, error) {
+	ref := ResourceRef{Name: strings.TrimSpace(fields.ResourceName), Namespace: strings.TrimSpace(fields.Namespace)}
 	if err := validateResource(ref); err != nil {
 		return ResourceRef{}, err
 	}
 	return ref, nil
 }
 
-func manifestsFromMap(values map[string]any) ([]Manifest, error) {
-	rawManifests, ok := values["manifests"]
-	if !ok {
-		return nil, fmt.Errorf("%w: manifests is required", ErrInvalidPayload)
+func resourceFromResultOrPayload(result encodedResult, payload map[string]any) (ResourceRef, error) {
+	name := strings.TrimSpace(result.ResourceName)
+	if name == "" {
+		name = strings.TrimSpace(result.Resource)
 	}
-	items, ok := rawManifests.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%w: manifests must be an array", ErrInvalidPayload)
+	ref := ResourceRef{Name: name, Namespace: strings.TrimSpace(result.Namespace)}
+	if err := validateResource(ref); err == nil {
+		return ref, nil
 	}
-	manifests := make([]Manifest, 0, len(items))
-	for index, item := range items {
-		object, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%w: manifests[%d] must be an object", ErrInvalidPayload, index)
-		}
-		name := stringField(object, "name")
-		content := stringField(object, "content")
+	payloadFields, err := decodePayloadFields(payload)
+	if err != nil {
+		return ResourceRef{}, err
+	}
+	return resourceFromPayloadFields(payloadFields)
+}
+
+func manifestsFromPayloadFields(fields encodedPayload) ([]Manifest, error) {
+	if len(fields.Manifests) == 0 {
+		return nil, fmt.Errorf("%w: at least one manifest is required", ErrInvalidPayload)
+	}
+	manifests := make([]Manifest, 0, len(fields.Manifests))
+	for index, item := range fields.Manifests {
+		content := strings.TrimSpace(item.Content)
 		if content == "" {
 			return nil, fmt.Errorf("%w: manifests[%d].content is required", ErrInvalidPayload, index)
 		}
-		manifests = append(manifests, Manifest{Name: name, Content: content})
-	}
-	if len(manifests) == 0 {
-		return nil, fmt.Errorf("%w: at least one manifest is required", ErrInvalidPayload)
+		manifests = append(manifests, Manifest{Name: strings.TrimSpace(item.Name), Content: item.Content})
 	}
 	return manifests, nil
 }
 
-func sectionsFromMap(values map[string]any) []DiagnosticsSection {
-	rawSections, ok := values["sections"].([]any)
-	if !ok {
-		return nil
-	}
-	sections := make([]DiagnosticsSection, 0, len(rawSections))
-	for _, raw := range rawSections {
-		object, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		sections = append(sections, DiagnosticsSection{Name: stringField(object, "name"), Output: stringField(object, "output"), Error: stringField(object, "error")})
+func diagnosticsSectionsFromFields(fields encodedResult) []DiagnosticsSection {
+	sections := make([]DiagnosticsSection, 0, len(fields.Sections))
+	for _, section := range fields.Sections {
+		sections = append(sections, DiagnosticsSection{Name: strings.TrimSpace(section.Name), Output: strings.TrimSpace(section.Output), Error: strings.TrimSpace(section.Error)})
 	}
 	return sections
 }
 
-func stringField(values map[string]any, key string) string {
-	value, _ := values[key].(string)
-	return strings.TrimSpace(value)
-}
-
-func intField(values map[string]any, key string) int {
-	switch value := values[key].(type) {
-	case int:
-		return value
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	default:
-		return 0
-	}
-}
-
-func boolField(values map[string]any, key string) bool {
-	value, _ := values[key].(bool)
-	return value
-}
-
-func parseHandledAt(values map[string]any) time.Time {
-	value := stringField(values, "handledAt")
+func parseHandledAtValue(value string) time.Time {
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return time.Time{}
 	}
@@ -433,14 +513,6 @@ func parseHandledAt(values map[string]any) time.Time {
 		return time.Time{}
 	}
 	return parsed
-}
-
-func withHandledAt(values map[string]any, handledAt time.Time) map[string]any {
-	if handledAt.IsZero() {
-		handledAt = time.Now().UTC()
-	}
-	values["handledAt"] = handledAt.UTC().Format(time.RFC3339)
-	return values
 }
 
 func deploymentMode(taskType TaskType) string {
