@@ -71,11 +71,11 @@ If the Cluster Agent is running, it will lease and complete pending tasks in no-
 Register a cached model artifact and create a Serving Application:
 
 ```bash
-curl -s localhost:8080/v1/model-artifacts \
+curl -s localhost:8080/v1/artifacts \
   -H 'Content-Type: application/json' \
   -d '{"family":"deepseek-v4","variant":"flash","revision":"rev1","pvcMountPath":"/home/dynamo/.cache/huggingface","pvcModelPath":"models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1","hostCachePath":"/data/cache/hub","quantization":"fp8"}'
 
-curl -s localhost:8080/v1/serving-applications \
+curl -s localhost:8080/v1/apps \
   -H 'Content-Type: application/json' \
   -d '{"projectId":"project-1","name":"DeepSeek V4 Flash","model":{"family":"deepseek-v4","variant":"flash","artifactId":"artifact-4","quantization":"fp8"},"placement":{"clusterId":"cluster-2","namespace":"dynamo-system"},"runtime":{"backend":"vllm","topology":"pd-disagg","recipe":"deepseek-v4-flash-vllm-dgd-disagg"},"service":{"endpointName":"deepseek-v4-flash","protocol":"openai-compatible","exposure":"cluster-local"},"optimization":{"target":"throughput","profilingMode":"disabled"}}'
 ```
@@ -83,7 +83,7 @@ curl -s localhost:8080/v1/serving-applications \
 Create a server-side dry-run preview task from the Serving Application:
 
 ```bash
-curl -s -X POST localhost:8080/v1/serving-applications/app-5/preview-task
+curl -s -X POST localhost:8080/v1/apps/app-5/tasks/preview
 ```
 
 For `PreviewDeploymentDiff`, the Cluster Agent runs `kubectl apply --dry-run=server` against the target cluster.
@@ -91,7 +91,7 @@ For `PreviewDeploymentDiff`, the Cluster Agent runs `kubectl apply --dry-run=ser
 Create an apply task from the same Serving Application:
 
 ```bash
-curl -s -X POST localhost:8080/v1/serving-applications/app-5/apply-task
+curl -s -X POST localhost:8080/v1/apps/app-5/tasks/apply
 ```
 
 For `ApplyDeployment`, the Cluster Agent runs `kubectl apply` and then polls the rendered `DynamoGraphDeployment` status until it reaches a terminal phase or times out.
@@ -99,7 +99,7 @@ For `ApplyDeployment`, the Cluster Agent runs `kubectl apply` and then polls the
 Create a delete-before-apply redeploy task:
 
 ```bash
-curl -s -X POST localhost:8080/v1/serving-applications/app-5/redeploy-task
+curl -s -X POST localhost:8080/v1/apps/app-5/tasks/redeploy
 ```
 
 For `DeleteBeforeApplyRedeploy`, the Cluster Agent deletes the rendered `DynamoGraphDeployment`, waits for it to disappear, applies the rendered manifest, and watches status.
@@ -107,7 +107,7 @@ For `DeleteBeforeApplyRedeploy`, the Cluster Agent deletes the rendered `DynamoG
 Create a retire task:
 
 ```bash
-curl -s -X POST localhost:8080/v1/serving-applications/app-5/retire-task
+curl -s -X POST localhost:8080/v1/apps/app-5/tasks/retire
 ```
 
 For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeployment` and waits for it to disappear.
@@ -116,7 +116,7 @@ List registered endpoints, observability entry points, and audit records:
 
 ```bash
 curl -s localhost:8080/v1/endpoints
-curl -s localhost:8080/v1/serving-applications/app-5/observability
+curl -s localhost:8080/v1/apps/app-5/observability
 curl -s localhost:8080/v1/audit-records
 ```
 

@@ -98,33 +98,33 @@ curl -sf "${API_URL}/healthz" >/dev/null
 
 project_id="$(json_post /v1/projects '{"name":"smoke"}' | jq -r .id)"
 cluster_id="$(json_post /v1/clusters "$(jq -n --arg name "$(kubectl config current-context)" --arg prom "http://localhost:${PROM_LOCAL_PORT}" '{name:$name,prometheusUrl:$prom}')" | jq -r .id)"
-artifact_id="$(json_post /v1/model-artifacts "$(jq -n --arg family "${MODEL_FAMILY}" --arg variant "${MODEL_VARIANT}" --arg revision "${MODEL_REVISION}" --arg mount "${PVC_MOUNT_PATH}" --arg model "${PVC_MODEL_PATH}" --arg host "${HOST_CACHE_PATH}" --arg quant "${QUANTIZATION}" '{family:$family,variant:$variant,revision:$revision,pvcMountPath:$mount,pvcModelPath:$model,hostCachePath:$host,quantization:$quant}')" | jq -r .id)"
+artifact_id="$(json_post /v1/artifacts "$(jq -n --arg family "${MODEL_FAMILY}" --arg variant "${MODEL_VARIANT}" --arg revision "${MODEL_REVISION}" --arg mount "${PVC_MOUNT_PATH}" --arg model "${PVC_MODEL_PATH}" --arg host "${HOST_CACHE_PATH}" --arg quant "${QUANTIZATION}" '{family:$family,variant:$variant,revision:$revision,pvcMountPath:$mount,pvcModelPath:$model,hostCachePath:$host,quantization:$quant}')" | jq -r .id)"
 app_payload="$(jq -n --arg project "${project_id}" --arg cluster "${cluster_id}" --arg artifact "${artifact_id}" --arg appName "${APP_NAME}" --arg namespace "${NAMESPACE}" --arg backend "${BACKEND}" --arg topology "${TOPOLOGY}" --arg recipe "${RECIPE_ID}" --arg endpoint "${ENDPOINT_NAME}" --arg family "${MODEL_FAMILY}" --arg variant "${MODEL_VARIANT}" --arg quant "${QUANTIZATION}" '{projectId:$project,name:$appName,model:{family:$family,variant:$variant,artifactId:$artifact,quantization:$quant},placement:{clusterId:$cluster,namespace:$namespace},runtime:{backend:$backend,topology:$topology,recipe:$recipe},service:{endpointName:$endpoint,protocol:"openai-compatible",exposure:"cluster-local"},optimization:{target:"throughput",profilingMode:"disabled"}}')"
-app_id="$(json_post /v1/serving-applications "${app_payload}" | jq -r .id)"
+app_id="$(json_post /v1/apps "${app_payload}" | jq -r .id)"
 
 (go run ./cmd/cluster-agent -management-url "${API_URL}" -cluster-id "${cluster_id}" -capability "dynamo=true,backend=${BACKEND}" -poll-interval 1s -heartbeat-interval 10s >"${SMOKE_DIR}/agent.log" 2>&1 & echo $! >"${SMOKE_DIR}/agent.pid")
 
-curl -sf -X POST "${API_URL}/v1/serving-applications/${app_id}/preview-task" >/dev/null
+curl -sf -X POST "${API_URL}/v1/apps/${app_id}/tasks/preview" >/dev/null
 preview_task="$(wait_task "${app_id}" PreviewDeploymentDiff "${TASK_TIMEOUT_SECONDS}")"
 echo "Preview: $(printf '%s' "${preview_task}" | jq -c '{id,status,error,result:{mode:.result.mode,manifestCount:.result.manifestCount}}')"
 
-curl -sf -X POST "${API_URL}/v1/serving-applications/${app_id}/apply-task" >/dev/null
+curl -sf -X POST "${API_URL}/v1/apps/${app_id}/tasks/apply" >/dev/null
 apply_task="$(wait_task "${app_id}" ApplyDeployment "${APPLY_TIMEOUT_SECONDS}")"
 echo "Apply: $(printf '%s' "${apply_task}" | jq -c '{id,status,error,result:{mode:.result.mode,phase:.result.phase,message:.result.message,endpointUrl:.result.endpointUrl}}')"
 
-curl -sf -X POST "${API_URL}/v1/serving-applications/${app_id}/diagnostics-task" >/dev/null
+curl -sf -X POST "${API_URL}/v1/apps/${app_id}/tasks/diagnostics" >/dev/null
 diagnostics_task="$(wait_task "${app_id}" FetchDiagnostics "${TASK_TIMEOUT_SECONDS}")"
 echo "Diagnostics: $(printf '%s' "${diagnostics_task}" | jq -c '{id,status,error,sections:[.result.sections[] | {name,error,bytes:(.output|length)}]}')"
 
 echo "Transitions:"
-curl -sf "${API_URL}/v1/serving-applications/${app_id}/transitions" | jq '[.[] | {from,to,actor,taskId,reason}]'
+curl -sf "${API_URL}/v1/apps/${app_id}/transitions" | jq '[.[] | {from,to,actor,taskId,reason}]'
 echo "Endpoint:"
 curl -sf "${API_URL}/v1/endpoints" | jq --arg app "${app_id}" '[.[] | select(.servingApplicationId==$app)]'
 echo "Observability summary:"
-curl -sf "${API_URL}/v1/serving-applications/${app_id}/observability/summary" | jq '{results:[.results[] | {name,value,error}]}'
+curl -sf "${API_URL}/v1/apps/${app_id}/observability/summary" | jq '{results:[.results[] | {name,value,error}]}'
 
 if [[ "${KEEP_RESOURCES}" != "true" ]]; then
-  curl -sf -X POST "${API_URL}/v1/serving-applications/${app_id}/retire-task" >/dev/null
+  curl -sf -X POST "${API_URL}/v1/apps/${app_id}/tasks/retire" >/dev/null
   retire_task="$(wait_task "${app_id}" RetireDeployment "${TASK_TIMEOUT_SECONDS}")"
   echo "Retire: $(printf '%s' "${retire_task}" | jq -c '{id,status,error,result:{mode:.result.mode,message:.result.message}}')"
 fi

@@ -165,8 +165,8 @@ summary() {
   local diagnostics_id="$7"
   local retire_id="$8"
   local apps transitions endpoints tasks audit
-  apps="$(json_get /v1/serving-applications)"
-  transitions="$(json_get "/v1/serving-applications/${app_id}/transitions")"
+  apps="$(json_get /v1/apps)"
+  transitions="$(json_get "/v1/apps/${app_id}/transitions")"
   endpoints="$(json_get /v1/endpoints)"
   tasks="$(json_get /v1/tasks)"
   audit="$(json_get /v1/audit-records)"
@@ -248,7 +248,7 @@ with urllib.request.urlopen('${API_URL}/v1/agents', timeout=5) as response:
     raise SystemExit(0 if json.load(response) else 1)
 PY"
 
-artifact="$(json_post /v1/model-artifacts '{"family":"deepseek-v4","variant":"flash","revision":"rev1","pvcMountPath":"/home/dynamo/.cache/huggingface","pvcModelPath":"models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1","hostCachePath":"/data/cache/hub","quantization":"fp8"}')"
+artifact="$(json_post /v1/artifacts '{"family":"deepseek-v4","variant":"flash","revision":"rev1","pvcMountPath":"/home/dynamo/.cache/huggingface","pvcModelPath":"models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1","hostCachePath":"/data/cache/hub","quantization":"fp8"}')"
 artifact_id="$(json_field id <<<"${artifact}")"
 app_payload="$(python3 - <<PY
 import json
@@ -263,14 +263,14 @@ print(json.dumps({
 }))
 PY
 )"
-app="$(json_post /v1/serving-applications "${app_payload}")"
+app="$(json_post /v1/apps "${app_payload}")"
 app_id="$(json_field id <<<"${app}")"
 
-preview_id="$(create_task_and_wait Preview "/v1/serving-applications/${app_id}/preview-task")"
-apply_id="$(create_task_and_wait Apply "/v1/serving-applications/${app_id}/apply-task")"
-redeploy_id="$(create_task_and_wait Redeploy "/v1/serving-applications/${app_id}/redeploy-task")"
-diagnostics_id="$(create_task_and_wait Diagnostics "/v1/serving-applications/${app_id}/diagnostics-task")"
-retire_id="$(create_task_and_wait Retire "/v1/serving-applications/${app_id}/retire-task")"
+preview_id="$(create_task_and_wait Preview "/v1/apps/${app_id}/tasks/preview")"
+apply_id="$(create_task_and_wait Apply "/v1/apps/${app_id}/tasks/apply")"
+redeploy_id="$(create_task_and_wait Redeploy "/v1/apps/${app_id}/tasks/redeploy")"
+diagnostics_id="$(create_task_and_wait Diagnostics "/v1/apps/${app_id}/tasks/diagnostics")"
+retire_id="$(create_task_and_wait Retire "/v1/apps/${app_id}/tasks/retire")"
 
 summary "${app_id}" "${project_id}" "${cluster_id}" "${preview_id}" "${apply_id}" "${redeploy_id}" "${diagnostics_id}" "${retire_id}"
 echo "Smoke succeeded: app=${app_id} data=${SMOKE_DIR}/management.json"

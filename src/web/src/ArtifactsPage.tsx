@@ -18,12 +18,12 @@ export function ArtifactsPage() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateModelArtifactInput>(defaultArtifact);
-  const artifacts = useQuery({ queryKey: ['model-artifacts'], queryFn: api.listModelArtifacts });
+  const artifacts = useQuery({ queryKey: ['artifacts'], queryFn: api.listModelArtifacts });
   const createArtifact = useMutation({
     mutationFn: api.createModelArtifact,
     onSuccess: () => {
       setForm(defaultArtifact);
-      queryClient.invalidateQueries({ queryKey: ['model-artifacts'] });
+      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     },
   });
 

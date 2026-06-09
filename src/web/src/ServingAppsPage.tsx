@@ -9,9 +9,9 @@ export function ServingAppsPage() {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const clusters = useQuery({ queryKey: ['clusters'], queryFn: api.listClusters });
-  const artifacts = useQuery({ queryKey: ['model-artifacts'], queryFn: api.listModelArtifacts });
+  const artifacts = useQuery({ queryKey: ['artifacts'], queryFn: api.listModelArtifacts });
   const recipes = useQuery({ queryKey: ['recipes'], queryFn: api.listRecipes });
-  const apps = useQuery({ queryKey: ['serving-applications'], queryFn: api.listServingApplications, refetchInterval: 2000 });
+  const apps = useQuery({ queryKey: ['apps'], queryFn: api.listServingApplications, refetchInterval: 2000 });
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks, refetchInterval: 2000 });
   const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints, refetchInterval: 2000 });
 
@@ -28,7 +28,7 @@ export function ServingAppsPage() {
 
   const selectedArtifact = artifacts.data?.find((artifact) => artifact.id === form.artifactId);
   const creationPlans = useQuery({
-    queryKey: ['serving-application-creation-plans', form.artifactId],
+    queryKey: ['app-plans', form.artifactId],
     queryFn: () => api.listServingApplicationCreationPlans(form.artifactId),
     enabled: Boolean(form.artifactId),
   });
@@ -37,14 +37,14 @@ export function ServingAppsPage() {
   const createApp = useMutation({
     mutationFn: (input: CreateServingApplicationInput) => api.createServingApplication(input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['serving-applications'] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
 
   const control = useServingApplicationControl({ apps: apps.data, recipes: recipes.data, tasks: tasks.data, endpoints: endpoints.data, selectedAppId });
 
   const transitions = useQuery({
-    queryKey: ['serving-application-transitions', selectedAppId],
+    queryKey: ['app-transitions', selectedAppId],
     queryFn: () => api.listServingApplicationTransitions(selectedAppId),
     enabled: Boolean(selectedAppId),
     refetchInterval: 2000,

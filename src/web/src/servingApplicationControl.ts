@@ -24,7 +24,7 @@ export function useServingApplicationControl(options: ServingApplicationControlO
     mutationFn: ({ appId, action }: { appId: string; action: ServingApplicationAction }) => executeServingApplicationAction({ appId, action, apps: options.apps ?? [], recipes: options.recipes ?? [], confirmExperimental }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['serving-applications'] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
       queryClient.invalidateQueries({ queryKey: ['endpoints'] });
     },
   });
