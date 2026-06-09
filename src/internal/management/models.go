@@ -68,14 +68,23 @@ type AcceleratorInventory struct {
 }
 
 type AcceleratorInventoryNode struct {
-	Name                     string                            `json:"name"`
-	Labels                   map[string]string                 `json:"labels,omitempty"`
-	Taints                   []string                          `json:"taints,omitempty"`
-	Capacity                 map[string]string                 `json:"capacity,omitempty"`
-	Allocatable              map[string]string                 `json:"allocatable,omitempty"`
-	AcceleratorResourceNames []string                          `json:"acceleratorResourceNames,omitempty"`
-	Accelerators             []AcceleratorInventoryAccelerator `json:"accelerators,omitempty"`
-	ObservedAt               time.Time                         `json:"observedAt"`
+	Name                     string                             `json:"name"`
+	Labels                   map[string]string                  `json:"labels,omitempty"`
+	Taints                   []string                           `json:"taints,omitempty"`
+	Capacity                 map[string]string                  `json:"capacity,omitempty"`
+	Allocatable              map[string]string                  `json:"allocatable,omitempty"`
+	AcceleratorResourceNames []string                           `json:"acceleratorResourceNames,omitempty"`
+	Accelerators             []AcceleratorInventoryAccelerator  `json:"accelerators,omitempty"`
+	Connectivity             []AcceleratorInventoryConnectivity `json:"connectivity,omitempty"`
+	ObservedAt               time.Time                          `json:"observedAt"`
+}
+
+type AcceleratorInventoryConnectivity struct {
+	Type       string            `json:"type"`
+	Present    bool              `json:"present"`
+	Confidence string            `json:"confidence"`
+	Summary    string            `json:"summary,omitempty"`
+	Details    map[string]string `json:"details,omitempty"`
 }
 
 type AcceleratorInventoryAccelerator struct {

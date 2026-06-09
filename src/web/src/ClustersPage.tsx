@@ -128,6 +128,7 @@ function ClusterRow({ cluster, agent, inventory }: { cluster: InferenceCluster; 
         <div className="muted">{t('nodeNames')}: {formatNodeNames(inventory)}</div>
         <div className="muted">{t('acceleratorResources')}: {formatAcceleratorResources(inventory)}</div>
         <div className="muted">{t('nvidiaAccelerators')}: {formatNvidiaAccelerators(inventory)}</div>
+        <div className="muted">{t('connectivity')}: {formatConnectivity(inventory)}</div>
         <div className="muted">{t('observedAt')}: {formatDate(inventory?.observedAt || agent?.lastInventoryObservedAt, t('never'))}</div>
         <div className="muted">{t('probeStatus')}: {formatProbeStatuses(inventory?.probeStatuses)}</div>
       </td>
@@ -180,6 +181,16 @@ function formatNvidiaAccelerators(inventory?: AcceleratorInventory) {
     }
   }
   return summaries.length ? summaries.join(', ') : '-';
+}
+
+function formatConnectivity(inventory?: AcceleratorInventory) {
+  const facts: string[] = [];
+  for (const node of inventory?.nodes ?? []) {
+    for (const fact of node.connectivity ?? []) {
+      facts.push(`${fact.type}=${fact.present ? 'present' : 'missing'}(${fact.confidence})`);
+    }
+  }
+  return facts.length ? Array.from(new Set(facts)).sort().join(', ') : '-';
 }
 
 function formatProbeStatuses(probes?: Array<{ name: string; status: string; message?: string }>) {

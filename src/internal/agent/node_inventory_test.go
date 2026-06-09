@@ -20,7 +20,7 @@ func TestKubectlNodeInventoryReporterMapsNodeAndNVIDIAFacts(t *testing.T) {
 				return []byte(`{
 					"items": [
 						{
-							"metadata": {"name": "node-a", "labels": {"node-role.kubernetes.io/gpu": "", "secret-looking": "not-a-secret-read", "nvidia.com/gpu.product": "NVIDIA-H200-SXM", "nvidia.com/gpu.memory": "143360", "nvidia.com/cuda.driver.major": "550", "nvidia.com/cuda.driver.minor": "54", "nvidia.com/cuda.runtime.major": "12", "nvidia.com/cuda.runtime.minor": "4"}},
+							"metadata": {"name": "node-a", "labels": {"node-role.kubernetes.io/gpu": "", "secret-looking": "not-a-secret-read", "nvidia.com/gpu.product": "NVIDIA-H200-SXM", "nvidia.com/gpu.memory": "143360", "nvidia.com/cuda.driver.major": "550", "nvidia.com/cuda.driver.minor": "54", "nvidia.com/cuda.runtime.major": "12", "nvidia.com/cuda.runtime.minor": "4", "nvidia.com/nvlink.present": "true", "rdma/ib": "true"}},
 							"spec": {"taints": [{"key": "nvidia.com/gpu", "value": "present", "effect": "NoSchedule"}]},
 							"status": {
 								"capacity": {"cpu": "128", "memory": "1Ti", "nvidia.com/gpu": "8"},
@@ -64,7 +64,10 @@ func TestKubectlNodeInventoryReporterMapsNodeAndNVIDIAFacts(t *testing.T) {
 	if node.Accelerators[0].VendorDetails["driverVersion"] != "550.54" || node.Accelerators[0].VendorDetails["cudaRuntimeVersion"] != "12.4" {
 		t.Fatalf("unexpected nvidia runtime facts: %+v", node.Accelerators[0].VendorDetails)
 	}
-	if len(request.ProbeStatuses) != 2 || request.ProbeStatuses[0].Name != "kubernetes-nodes" || request.ProbeStatuses[0].Status != "ok" || request.ProbeStatuses[1].Name != "nvidia-dcgm" || request.ProbeStatuses[1].Status != "ok" {
+	if len(node.Connectivity) != 2 || node.Connectivity[0].Type != "nvlink" || !node.Connectivity[0].Present || node.Connectivity[1].Type != "rdma" || !node.Connectivity[1].Present {
+		t.Fatalf("unexpected connectivity facts: %+v", node.Connectivity)
+	}
+	if len(request.ProbeStatuses) != 3 || request.ProbeStatuses[0].Name != "kubernetes-nodes" || request.ProbeStatuses[0].Status != "ok" || request.ProbeStatuses[1].Name != "nvidia-dcgm" || request.ProbeStatuses[1].Status != "ok" || request.ProbeStatuses[2].Name != "connectivity" || request.ProbeStatuses[2].Status != "ok" {
 		t.Fatalf("unexpected probe statuses: %+v", request.ProbeStatuses)
 	}
 }
@@ -161,8 +164,26 @@ func TestDCGMProbeWarningDoesNotDropNodeInventory(t *testing.T) {
 	if len(request.Nodes) != 1 || len(request.Nodes[0].Accelerators) != 1 {
 		t.Fatalf("expected node inventory to survive dcgm warning: %+v", request)
 	}
-	if len(request.ProbeStatuses) != 2 || request.ProbeStatuses[1].Name != "nvidia-dcgm" || request.ProbeStatuses[1].Status != "warning" {
+	if len(request.ProbeStatuses) != 3 || request.ProbeStatuses[1].Name != "nvidia-dcgm" || request.ProbeStatuses[1].Status != "warning" {
 		t.Fatalf("expected dcgm warning, got %+v", request.ProbeStatuses)
+	}
+}
+
+func TestConnectivityFactsRepresentUnavailableAndIncompleteSignals(t *testing.T) {
+	facts := connectivityFromNode(map[string]string{"nvidia.com/nvlink.present": "false"}, nil)
+	if len(facts) != 2 || facts[0].Type != "nvlink" || facts[0].Present || facts[0].Confidence != "observed" || facts[1].Type != "rdma" || facts[1].Present || facts[1].Confidence != "unobserved" {
+		t.Fatalf("unexpected unavailable connectivity facts: %+v", facts)
+	}
+	facts = connectivityFromNode(map[string]string{"feature.node.kubernetes.io/network-sriov.capable": ""}, nil)
+	if len(facts) != 2 || facts[1].Type != "rdma" || !facts[1].Present || facts[1].Confidence != "incomplete" {
+		t.Fatalf("unexpected incomplete rdma fact: %+v", facts)
+	}
+}
+
+func TestConnectivityProbeWarnsOnPartialSignals(t *testing.T) {
+	probe := connectivityProbeStatus([]management.AcceleratorInventoryNode{{Connectivity: connectivityFromNode(map[string]string{"nvidia.com/nvlink.present": "true"}, nil)}})
+	if probe.Name != "connectivity" || probe.Status != "warning" || !strings.Contains(probe.Message, "rdma") {
+		t.Fatalf("unexpected connectivity warning: %+v", probe)
 	}
 }
 

@@ -43,7 +43,16 @@ export interface AcceleratorInventoryNode {
   allocatable?: Record<string, string>;
   acceleratorResourceNames?: string[];
   accelerators?: AcceleratorInventoryAccelerator[];
+  connectivity?: AcceleratorInventoryConnectivity[];
   observedAt?: string;
+}
+
+export interface AcceleratorInventoryConnectivity {
+  type: string;
+  present: boolean;
+  confidence: string;
+  summary?: string;
+  details?: Record<string, string>;
 }
 
 export interface AcceleratorInventoryAccelerator {

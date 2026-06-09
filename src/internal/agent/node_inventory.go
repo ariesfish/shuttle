@@ -32,8 +32,9 @@ type kubectlNode struct {
 }
 
 type kubectlNodeMetadata struct {
-	Name   string            `json:"name"`
-	Labels map[string]string `json:"labels"`
+	Name        string            `json:"name"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
 }
 
 type kubectlNodeSpec struct {
@@ -90,7 +91,7 @@ func (r KubectlNodeInventoryReporter) Report(ctx context.Context, _ string, agen
 	}
 	request.Nodes = nodes
 	request.ProbeStatuses = []management.AcceleratorInventoryProbe{{Name: "kubernetes-nodes", Status: "ok", Message: fmt.Sprintf("collected %d node(s)", len(nodes))}}
-	request.ProbeStatuses = append(request.ProbeStatuses, dcgmExporterProbeStatus(runCtx, runKubectl))
+	request.ProbeStatuses = append(request.ProbeStatuses, dcgmExporterProbeStatus(runCtx, runKubectl), connectivityProbeStatus(nodes))
 	return request, true, nil
 }
 
@@ -113,6 +114,7 @@ func parseKubectlNodeInventory(contents []byte, observedAt time.Time) ([]managem
 		capacity := stringifyResourceMap(item.Status.Capacity)
 		allocatable := stringifyResourceMap(item.Status.Allocatable)
 		labels := cloneInventoryStringMap(item.Metadata.Labels)
+		annotations := cloneInventoryStringMap(item.Metadata.Annotations)
 		nodes = append(nodes, management.AcceleratorInventoryNode{
 			Name:                     name,
 			Labels:                   labels,
@@ -121,6 +123,7 @@ func parseKubectlNodeInventory(contents []byte, observedAt time.Time) ([]managem
 			Allocatable:              allocatable,
 			AcceleratorResourceNames: acceleratorResourceNames(capacity, allocatable),
 			Accelerators:             nvidiaAcceleratorsFromNode(labels, capacity, allocatable),
+			Connectivity:             connectivityFromNode(labels, annotations),
 			ObservedAt:               observedAt,
 		})
 	}
@@ -257,6 +260,74 @@ func dcgmExporterProbeStatus(ctx context.Context, runKubectl func(context.Contex
 		return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "warning", Message: "dcgm exporter not observed"}
 	}
 	return management.AcceleratorInventoryProbe{Name: "nvidia-dcgm", Status: "ok", Message: fmt.Sprintf("observed %d dcgm exporter pod(s)", len(pods.Items))}
+}
+
+func connectivityFromNode(labels map[string]string, annotations map[string]string) []management.AcceleratorInventoryConnectivity {
+	facts := []management.AcceleratorInventoryConnectivity{
+		connectivityFact("nvlink", labels, annotations, []string{"nvidia.com/nvlink.present", "nvidia.com/gpu.nvlink", "inference.platform/nvlink"}),
+		connectivityFact("rdma", labels, annotations, []string{"rdma/ib", "feature.node.kubernetes.io/network-sriov.capable", "inference.platform/rdma", "nvidia.com/rdma.capable"}),
+	}
+	output := make([]management.AcceleratorInventoryConnectivity, 0, len(facts))
+	for _, fact := range facts {
+		if fact.Confidence != "" {
+			output = append(output, fact)
+		}
+	}
+	return output
+}
+
+func connectivityFact(kind string, labels map[string]string, annotations map[string]string, keys []string) management.AcceleratorInventoryConnectivity {
+	for _, key := range keys {
+		if value, ok := lookupConnectivityValue(labels, annotations, key); ok {
+			present := truthyConnectivityValue(value)
+			confidence := "observed"
+			if strings.TrimSpace(value) == "" {
+				confidence = "incomplete"
+			}
+			return management.AcceleratorInventoryConnectivity{Type: kind, Present: present, Confidence: confidence, Summary: key + "=" + strings.TrimSpace(value), Details: map[string]string{"source": key}}
+		}
+	}
+	return management.AcceleratorInventoryConnectivity{Type: kind, Present: false, Confidence: "unobserved", Summary: kind + " not observed"}
+}
+
+func lookupConnectivityValue(labels map[string]string, annotations map[string]string, key string) (string, bool) {
+	if value, ok := labels[key]; ok {
+		return value, true
+	}
+	if value, ok := annotations[key]; ok {
+		return value, true
+	}
+	return "", false
+}
+
+func truthyConnectivityValue(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "" || value == "true" || value == "1" || value == "yes" || value == "present" || value == "capable" || value == "enabled"
+}
+
+func connectivityProbeStatus(nodes []management.AcceleratorInventoryNode) management.AcceleratorInventoryProbe {
+	observed := map[string]bool{}
+	incomplete := false
+	for _, node := range nodes {
+		for _, fact := range node.Connectivity {
+			if fact.Confidence == "observed" && fact.Present {
+				observed[fact.Type] = true
+			}
+			if fact.Confidence != "observed" {
+				incomplete = true
+			}
+		}
+	}
+	if observed["nvlink"] && observed["rdma"] && !incomplete {
+		return management.AcceleratorInventoryProbe{Name: "connectivity", Status: "ok", Message: "nvlink and rdma observed"}
+	}
+	missing := []string{}
+	for _, kind := range []string{"nvlink", "rdma"} {
+		if !observed[kind] {
+			missing = append(missing, kind)
+		}
+	}
+	return management.AcceleratorInventoryProbe{Name: "connectivity", Status: "warning", Message: boundedInventoryMessage("connectivity facts incomplete: " + strings.Join(missing, ","))}
 }
 
 func nodeInventoryWarning(err error) management.AcceleratorInventoryProbe {

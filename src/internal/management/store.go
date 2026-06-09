@@ -759,6 +759,12 @@ func cloneInventoryNodes(input []AcceleratorInventoryNode) []AcceleratorInventor
 		node.Allocatable = cloneStringMap(node.Allocatable)
 		node.AcceleratorResourceNames = append([]string(nil), node.AcceleratorResourceNames...)
 		node.Accelerators = accelerators
+		connectivity := make([]AcceleratorInventoryConnectivity, 0, len(node.Connectivity))
+		for _, item := range node.Connectivity {
+			item.Details = cloneStringMap(item.Details)
+			connectivity = append(connectivity, item)
+		}
+		node.Connectivity = connectivity
 		output = append(output, node)
 	}
 	return output
