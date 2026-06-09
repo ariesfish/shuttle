@@ -1,20 +1,22 @@
 import { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Boxes, ClipboardList, Database, FileClock, FolderKanban, Languages, Rocket } from 'lucide-react';
+import { Boxes, ClipboardList, Cpu, Database, FileClock, FolderKanban, Languages, Rocket } from 'lucide-react';
 import { useI18n } from './i18n';
 import { ClustersPage } from './ClustersPage';
 import { ProjectsPage } from './ProjectsPage';
+import { AcceleratorPoolsPage } from './AcceleratorPoolsPage';
 import { ArtifactsPage } from './ArtifactsPage';
 import { ServingAppsPage } from './ServingAppsPage';
 import { TasksPage } from './TasksPage';
 import { AuditPage } from './AuditPage';
 import { getApiSettings, saveApiSettings } from './api';
 
-type Page = 'clusters' | 'projects' | 'artifacts' | 'servingApps' | 'tasks' | 'audit';
+type Page = 'clusters' | 'projects' | 'acceleratorPools' | 'artifacts' | 'servingApps' | 'tasks' | 'audit';
 
 const pageKeys: Record<Page, string> = {
   clusters: 'navClusters',
   projects: 'navProjects',
+  acceleratorPools: 'navAcceleratorPools',
   artifacts: 'navArtifacts',
   servingApps: 'navServingApps',
   tasks: 'navTasks',
@@ -24,6 +26,7 @@ const pageKeys: Record<Page, string> = {
 const pageIcons = {
   clusters: Boxes,
   projects: FolderKanban,
+  acceleratorPools: Cpu,
   artifacts: Database,
   servingApps: Rocket,
   tasks: ClipboardList,
@@ -94,11 +97,12 @@ function AppContent() {
         </div>
         {page === 'clusters' ? <ClustersPage /> : null}
         {page === 'projects' ? <ProjectsPage /> : null}
+        {page === 'acceleratorPools' ? <AcceleratorPoolsPage /> : null}
         {page === 'artifacts' ? <ArtifactsPage /> : null}
         {page === 'servingApps' ? <ServingAppsPage /> : null}
         {page === 'tasks' ? <TasksPage /> : null}
         {page === 'audit' ? <AuditPage /> : null}
-        {page !== 'clusters' && page !== 'projects' && page !== 'artifacts' && page !== 'servingApps' && page !== 'tasks' && page !== 'audit' ? <Placeholder title={t(pageKeys[page])} /> : null}
+        {page !== 'clusters' && page !== 'projects' && page !== 'acceleratorPools' && page !== 'artifacts' && page !== 'servingApps' && page !== 'tasks' && page !== 'audit' ? <Placeholder title={t(pageKeys[page])} /> : null}
       </main>
     </div>
   );

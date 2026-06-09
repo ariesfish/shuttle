@@ -86,6 +86,9 @@ func normalizeStoreData(data *storeData) {
 	if data.Agents == nil {
 		data.Agents = map[string]ClusterAgent{}
 	}
+	if data.AcceleratorPools == nil {
+		data.AcceleratorPools = map[string]AcceleratorPool{}
+	}
 	if data.ModelArtifacts == nil {
 		data.ModelArtifacts = map[string]ModelArtifact{}
 	}

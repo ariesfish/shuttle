@@ -54,6 +54,17 @@ func (c *ManagementCommands) RegisterAgent(ctx context.Context, req RegisterAgen
 	return agent, err
 }
 
+func (c *ManagementCommands) CreateAcceleratorPool(ctx context.Context, req CreateAcceleratorPoolRequest) (AcceleratorPool, error) {
+	if err := requireActorRole(ctx, "admin", "operator"); err != nil {
+		return AcceleratorPool{}, err
+	}
+	pool, err := c.store.CreateAcceleratorPool(req)
+	if err == nil {
+		c.recordAudit(ctx, "create_accelerator_pool", pool.ID, map[string]any{"clusterId": pool.ClusterID, "name": pool.Name})
+	}
+	return pool, err
+}
+
 func (c *ManagementCommands) CreateModelArtifact(ctx context.Context, req CreateModelArtifactRequest) (ModelArtifact, error) {
 	if err := requireActorRole(ctx, "admin", "operator"); err != nil {
 		return ModelArtifact{}, err

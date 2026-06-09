@@ -113,6 +113,29 @@ type ReportAcceleratorInventoryRequest struct {
 	CollectionMetadata map[string]string           `json:"collectionMetadata,omitempty"`
 }
 
+type AcceleratorPool struct {
+	ID           string            `json:"id"`
+	ClusterID    string            `json:"clusterId"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	UpdatedAt    time.Time         `json:"updatedAt"`
+}
+
+type AcceleratorPoolSummary struct {
+	Pool              AcceleratorPool               `json:"pool"`
+	Freshness         AcceleratorInventoryFreshness `json:"freshness"`
+	InventoryRevision string                        `json:"inventoryRevision,omitempty"`
+	NodeCount         int                           `json:"nodeCount"`
+	AcceleratorCount  int                           `json:"acceleratorCount"`
+	AcceleratorModels map[string]int                `json:"acceleratorModels,omitempty"`
+	MemoryMiBSummary  map[string]int                `json:"memoryMiBSummary,omitempty"`
+	Labels            map[string][]string           `json:"labels,omitempty"`
+	Taints            []string                      `json:"taints,omitempty"`
+	Warnings          []string                      `json:"warnings,omitempty"`
+}
+
 type ModelArtifact struct {
 	ID            string    `json:"id"`
 	Family        string    `json:"family"`
@@ -293,6 +316,13 @@ type HeartbeatRequest struct {
 	LastInventoryRevision   string            `json:"lastInventoryRevision,omitempty"`
 	LastInventoryFreshness  string            `json:"lastInventoryFreshness,omitempty"`
 	LastInventoryObservedAt time.Time         `json:"lastInventoryObservedAt,omitempty"`
+}
+
+type CreateAcceleratorPoolRequest struct {
+	ClusterID    string            `json:"clusterId"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 type CreateModelArtifactRequest struct {

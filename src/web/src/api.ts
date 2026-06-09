@@ -70,6 +70,36 @@ export interface AcceleratorInventoryProbe {
   message?: string;
 }
 
+export interface AcceleratorPool {
+  id: string;
+  clusterId: string;
+  name: string;
+  description?: string;
+  nodeSelector?: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcceleratorPoolSummary {
+  pool: AcceleratorPool;
+  freshness: string;
+  inventoryRevision?: string;
+  nodeCount: number;
+  acceleratorCount: number;
+  acceleratorModels?: Record<string, number>;
+  memoryMiBSummary?: Record<string, number>;
+  labels?: Record<string, string[]>;
+  taints?: string[];
+  warnings?: string[];
+}
+
+export interface CreateAcceleratorPoolInput {
+  clusterId: string;
+  name: string;
+  description?: string;
+  nodeSelector?: Record<string, string>;
+}
+
 export interface CreateClusterInput {
   name: string;
   description?: string;
@@ -307,6 +337,12 @@ export const api = {
     body: JSON.stringify(input),
   }),
   listAgents: () => request<ClusterAgent[]>('/v1/agents'),
+  listAcceleratorPools: (clusterId?: string) => request<AcceleratorPool[]>(`/v1/accelerator-pools${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
+  listAcceleratorPoolSummaries: (clusterId?: string) => request<AcceleratorPoolSummary[]>(`/v1/accelerator-pools/summaries${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
+  createAcceleratorPool: (input: CreateAcceleratorPoolInput) => request<AcceleratorPool>('/v1/accelerator-pools', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
   listProjects: () => request<Project[]>('/v1/projects'),
   createProject: (input: CreateProjectInput) => request<Project>('/v1/projects', {
     method: 'POST',

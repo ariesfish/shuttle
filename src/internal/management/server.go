@@ -44,6 +44,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/clusters/{clusterID}/accelerator-inventory", s.getAcceleratorInventory)
 	mux.HandleFunc("GET /v1/clusters/{clusterID}/accelerator-inventory/revisions", s.listAcceleratorInventoryRevisions)
 	mux.HandleFunc("POST /v1/clusters/{clusterID}/accelerator-inventory", s.reportAcceleratorInventory)
+	mux.HandleFunc("POST /v1/accelerator-pools", s.createAcceleratorPool)
+	mux.HandleFunc("GET /v1/accelerator-pools", s.listAcceleratorPools)
+	mux.HandleFunc("GET /v1/accelerator-pools/summaries", s.listAcceleratorPoolSummaries)
 	mux.HandleFunc("POST /v1/agents/register", s.registerAgent)
 	mux.HandleFunc("GET /v1/agents", s.listAgents)
 	mux.HandleFunc("POST /v1/agents/{agentID}/heartbeat", s.heartbeatAgent)
@@ -123,6 +126,25 @@ func (s *Server) reportAcceleratorInventory(w http.ResponseWriter, r *http.Reque
 	}
 	inventory, err := s.store.ReportAcceleratorInventory(r.PathValue("clusterID"), req)
 	writeResult(w, inventory, http.StatusOK, err)
+}
+
+func (s *Server) createAcceleratorPool(w http.ResponseWriter, r *http.Request) {
+	var req CreateAcceleratorPoolRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	pool, err := s.commands.CreateAcceleratorPool(r.Context(), req)
+	writeResult(w, pool, http.StatusCreated, err)
+}
+
+func (s *Server) listAcceleratorPools(w http.ResponseWriter, r *http.Request) {
+	pools, err := s.store.ListAcceleratorPools(r.URL.Query().Get("clusterId"))
+	writeResult(w, pools, http.StatusOK, err)
+}
+
+func (s *Server) listAcceleratorPoolSummaries(w http.ResponseWriter, r *http.Request) {
+	summaries, err := s.store.ListAcceleratorPoolSummaries(r.URL.Query().Get("clusterId"))
+	writeResult(w, summaries, http.StatusOK, err)
 }
 
 func (s *Server) registerAgent(w http.ResponseWriter, r *http.Request) {

@@ -30,6 +30,7 @@ type ManagementStore interface {
 	ClusterStore
 	ClusterAgentStore
 	AcceleratorInventoryStore
+	AcceleratorPoolStore
 	ModelArtifactStore
 	RecipeStore
 	ServingApplicationStore
@@ -60,6 +61,12 @@ type AcceleratorInventoryStore interface {
 	ReportAcceleratorInventory(clusterID string, req ReportAcceleratorInventoryRequest) (AcceleratorInventory, error)
 	GetAcceleratorInventory(clusterID string) (AcceleratorInventory, error)
 	ListAcceleratorInventoryRevisions(clusterID string) ([]AcceleratorInventory, error)
+}
+
+type AcceleratorPoolStore interface {
+	CreateAcceleratorPool(CreateAcceleratorPoolRequest) (AcceleratorPool, error)
+	ListAcceleratorPools(clusterID string) ([]AcceleratorPool, error)
+	ListAcceleratorPoolSummaries(clusterID string) ([]AcceleratorPoolSummary, error)
 }
 
 type ModelArtifactStore interface {
@@ -111,6 +118,7 @@ type storeData struct {
 	Projects                      map[string]Project                      `json:"projects"`
 	Clusters                      map[string]InferenceCluster             `json:"clusters"`
 	Agents                        map[string]ClusterAgent                 `json:"agents"`
+	AcceleratorPools              map[string]AcceleratorPool              `json:"acceleratorPools"`
 	ModelArtifacts                map[string]ModelArtifact                `json:"modelArtifacts"`
 	ServingApplications           map[string]ServingApplication           `json:"servingApplications"`
 	Transitions                   map[string]ServingApplicationTransition `json:"transitions"`
@@ -141,6 +149,7 @@ func newStoreData() storeData {
 		Projects:                      map[string]Project{},
 		Clusters:                      map[string]InferenceCluster{},
 		Agents:                        map[string]ClusterAgent{},
+		AcceleratorPools:              map[string]AcceleratorPool{},
 		ModelArtifacts:                map[string]ModelArtifact{},
 		ServingApplications:           map[string]ServingApplication{},
 		Transitions:                   map[string]ServingApplicationTransition{},
@@ -404,6 +413,65 @@ func (s *FileStore) ListAcceleratorInventoryRevisions(clusterID string) ([]Accel
 	output := make([]AcceleratorInventory, len(revisions))
 	copy(output, revisions)
 	return output, nil
+}
+
+func (s *FileStore) CreateAcceleratorPool(req CreateAcceleratorPoolRequest) (AcceleratorPool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	name := strings.TrimSpace(req.Name)
+	clusterID := strings.TrimSpace(req.ClusterID)
+	if name == "" || clusterID == "" {
+		return AcceleratorPool{}, fmt.Errorf("%w: name and clusterId are required", ErrInvalidInput)
+	}
+	if _, ok := s.data.Clusters[clusterID]; !ok {
+		return AcceleratorPool{}, fmt.Errorf("%w: cluster does not exist", ErrInvalidInput)
+	}
+	now := s.now().UTC()
+	pool := AcceleratorPool{ID: s.nextID("pool"), ClusterID: clusterID, Name: name, Description: strings.TrimSpace(req.Description), NodeSelector: cloneStringMap(req.NodeSelector), CreatedAt: now, UpdatedAt: now}
+	s.data.AcceleratorPools[pool.ID] = pool
+	return pool, s.saveLocked()
+}
+
+func (s *FileStore) ListAcceleratorPools(clusterID string) ([]AcceleratorPool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pools := make([]AcceleratorPool, 0, len(s.data.AcceleratorPools))
+	for _, pool := range s.data.AcceleratorPools {
+		if strings.TrimSpace(clusterID) == "" || pool.ClusterID == clusterID {
+			pool.NodeSelector = cloneStringMap(pool.NodeSelector)
+			pools = append(pools, pool)
+		}
+	}
+	sort.Slice(pools, func(i, j int) bool { return pools[i].CreatedAt.Before(pools[j].CreatedAt) })
+	return pools, nil
+}
+
+func (s *FileStore) ListAcceleratorPoolSummaries(clusterID string) ([]AcceleratorPoolSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pools := make([]AcceleratorPool, 0, len(s.data.AcceleratorPools))
+	for _, pool := range s.data.AcceleratorPools {
+		if strings.TrimSpace(clusterID) == "" || pool.ClusterID == clusterID {
+			pools = append(pools, pool)
+		}
+	}
+	sort.Slice(pools, func(i, j int) bool { return pools[i].CreatedAt.Before(pools[j].CreatedAt) })
+	summaries := make([]AcceleratorPoolSummary, 0, len(pools))
+	for _, pool := range pools {
+		inventory := s.data.AcceleratorInventory[pool.ClusterID]
+		if inventory.ClusterID == "" {
+			summaries = append(summaries, AcceleratorPoolSummary{Pool: pool, Freshness: AcceleratorInventoryFreshnessMissing, Warnings: []string{"inventory missing"}})
+			continue
+		}
+		if isInventoryStale(s.now().UTC(), inventory.ReportedAt) {
+			inventory.Freshness = AcceleratorInventoryFreshnessStale
+		}
+		summaries = append(summaries, summarizeAcceleratorPool(pool, inventory))
+	}
+	return summaries, nil
 }
 
 func (s *FileStore) CreateModelArtifact(req CreateModelArtifactRequest) (ModelArtifact, error) {
@@ -771,6 +839,63 @@ func (s *FileStore) nextID(prefix string) string {
 	id := fmt.Sprintf("%s-%d", prefix, s.data.NextID)
 	s.data.NextID++
 	return id
+}
+
+func summarizeAcceleratorPool(pool AcceleratorPool, inventory AcceleratorInventory) AcceleratorPoolSummary {
+	summary := AcceleratorPoolSummary{Pool: pool, Freshness: inventory.Freshness, InventoryRevision: inventory.Revision, AcceleratorModels: map[string]int{}, MemoryMiBSummary: map[string]int{}, Labels: map[string][]string{}}
+	for _, node := range inventory.Nodes {
+		if !nodeMatchesSelector(node, pool.NodeSelector) {
+			continue
+		}
+		summary.NodeCount++
+		for key, value := range node.Labels {
+			entry := key + "=" + value
+			summary.Labels[key] = append(summary.Labels[key], entry)
+		}
+		summary.Taints = append(summary.Taints, node.Taints...)
+		for _, accelerator := range node.Accelerators {
+			summary.AcceleratorCount += accelerator.DeviceCount
+			model := strings.TrimSpace(accelerator.Product)
+			if model == "" {
+				model = accelerator.Vendor + ":unknown"
+			}
+			summary.AcceleratorModels[model] += accelerator.DeviceCount
+			if accelerator.MemoryMiB > 0 {
+				summary.MemoryMiBSummary[model] = accelerator.MemoryMiB
+			}
+		}
+	}
+	if summary.NodeCount == 0 {
+		summary.Warnings = append(summary.Warnings, "pool selector matched no observed nodes")
+	}
+	if summary.Freshness == AcceleratorInventoryFreshnessStale {
+		summary.Warnings = append(summary.Warnings, "inventory stale")
+	}
+	if len(summary.AcceleratorModels) == 0 {
+		summary.AcceleratorModels = nil
+	}
+	if len(summary.MemoryMiBSummary) == 0 {
+		summary.MemoryMiBSummary = nil
+	}
+	if len(summary.Labels) == 0 {
+		summary.Labels = nil
+	}
+	if len(summary.Taints) == 0 {
+		summary.Taints = nil
+	} else {
+		sort.Strings(summary.Taints)
+	}
+	return summary
+}
+
+func nodeMatchesSelector(node AcceleratorInventoryNode, selector map[string]string) bool {
+	for key, expected := range selector {
+		actual, ok := node.Labels[key]
+		if !ok || actual != expected {
+			return false
+		}
+	}
+	return true
 }
 
 func isInventoryStale(now time.Time, reportedAt time.Time) bool {
