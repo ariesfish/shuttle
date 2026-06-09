@@ -43,7 +43,7 @@ func main() {
 	}
 	var runner *agent.Runner
 	if strings.EqualFold(*executorMode, "fake") {
-		runner = agent.NewRunnerWithExecutor(client, config, logger, agent.FakeKubernetesExecutor{})
+		runner = agent.NewRunnerWithInventory(client, config, logger, agent.FakeKubernetesExecutor{}, agent.FakeInventoryReporter{})
 	} else {
 		runner = agent.NewRunner(client, config, logger)
 	}

@@ -33,13 +33,72 @@ type InferenceCluster struct {
 }
 
 type ClusterAgent struct {
-	ID            string            `json:"id"`
-	ClusterID     string            `json:"clusterId"`
-	Version       string            `json:"version,omitempty"`
-	Capabilities  map[string]string `json:"capabilities,omitempty"`
-	LastHeartbeat time.Time         `json:"lastHeartbeat,omitempty"`
-	CreatedAt     time.Time         `json:"createdAt"`
-	UpdatedAt     time.Time         `json:"updatedAt"`
+	ID                      string            `json:"id"`
+	ClusterID               string            `json:"clusterId"`
+	Version                 string            `json:"version,omitempty"`
+	Capabilities            map[string]string `json:"capabilities,omitempty"`
+	LastInventoryRevision   string            `json:"lastInventoryRevision,omitempty"`
+	LastInventoryFreshness  string            `json:"lastInventoryFreshness,omitempty"`
+	LastInventoryObservedAt time.Time         `json:"lastInventoryObservedAt,omitempty"`
+	LastInventoryReportedAt time.Time         `json:"lastInventoryReportedAt,omitempty"`
+	LastHeartbeat           time.Time         `json:"lastHeartbeat,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+}
+
+type AcceleratorInventoryFreshness string
+
+const (
+	AcceleratorInventoryFreshnessFresh       AcceleratorInventoryFreshness = "fresh"
+	AcceleratorInventoryFreshnessMissing     AcceleratorInventoryFreshness = "missing"
+	AcceleratorInventoryFreshnessUnsupported AcceleratorInventoryFreshness = "unsupported"
+)
+
+type AcceleratorInventory struct {
+	ClusterID          string                        `json:"clusterId"`
+	AgentID            string                        `json:"agentId"`
+	SchemaVersion      string                        `json:"schemaVersion"`
+	Revision           string                        `json:"revision"`
+	ObservedAt         time.Time                     `json:"observedAt"`
+	ReportedAt         time.Time                     `json:"reportedAt"`
+	Freshness          AcceleratorInventoryFreshness `json:"freshness"`
+	Nodes              []AcceleratorInventoryNode    `json:"nodes"`
+	ProbeStatuses      []AcceleratorInventoryProbe   `json:"probeStatuses,omitempty"`
+	CollectionMetadata map[string]string             `json:"collectionMetadata,omitempty"`
+}
+
+type AcceleratorInventoryNode struct {
+	Name         string                            `json:"name"`
+	Labels       map[string]string                 `json:"labels,omitempty"`
+	Taints       []string                          `json:"taints,omitempty"`
+	Capacity     map[string]string                 `json:"capacity,omitempty"`
+	Allocatable  map[string]string                 `json:"allocatable,omitempty"`
+	Accelerators []AcceleratorInventoryAccelerator `json:"accelerators,omitempty"`
+	ObservedAt   time.Time                         `json:"observedAt"`
+}
+
+type AcceleratorInventoryAccelerator struct {
+	Vendor        string            `json:"vendor"`
+	Product       string            `json:"product,omitempty"`
+	DeviceCount   int               `json:"deviceCount,omitempty"`
+	MemoryMiB     int               `json:"memoryMiB,omitempty"`
+	VendorDetails map[string]string `json:"vendorDetails,omitempty"`
+}
+
+type AcceleratorInventoryProbe struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+type ReportAcceleratorInventoryRequest struct {
+	AgentID            string                      `json:"agentId"`
+	SchemaVersion      string                      `json:"schemaVersion"`
+	Revision           string                      `json:"revision,omitempty"`
+	ObservedAt         time.Time                   `json:"observedAt"`
+	Nodes              []AcceleratorInventoryNode  `json:"nodes"`
+	ProbeStatuses      []AcceleratorInventoryProbe `json:"probeStatuses,omitempty"`
+	CollectionMetadata map[string]string           `json:"collectionMetadata,omitempty"`
 }
 
 type ModelArtifact struct {
@@ -217,8 +276,11 @@ type RegisterAgentRequest struct {
 }
 
 type HeartbeatRequest struct {
-	Version      string            `json:"version,omitempty"`
-	Capabilities map[string]string `json:"capabilities,omitempty"`
+	Version                 string            `json:"version,omitempty"`
+	Capabilities            map[string]string `json:"capabilities,omitempty"`
+	LastInventoryRevision   string            `json:"lastInventoryRevision,omitempty"`
+	LastInventoryFreshness  string            `json:"lastInventoryFreshness,omitempty"`
+	LastInventoryObservedAt time.Time         `json:"lastInventoryObservedAt,omitempty"`
 }
 
 type CreateModelArtifactRequest struct {

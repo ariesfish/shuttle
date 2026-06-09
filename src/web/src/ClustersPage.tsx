@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type ClusterAgent, type CreateClusterInput, type InferenceCluster } from './api';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, type AcceleratorInventory, type ClusterAgent, type CreateClusterInput, type InferenceCluster } from './api';
 import { getApiSettings } from './api';
 import { useI18n } from './i18n';
 
@@ -18,6 +18,13 @@ export function ClustersPage() {
     },
   });
 
+  const inventoryQueries = useQueries({
+    queries: (clusters.data ?? []).map((cluster) => ({
+      queryKey: ['acceleratorInventory', cluster.id],
+      queryFn: () => api.getAcceleratorInventory(cluster.id),
+      refetchInterval: 5000,
+    })),
+  });
   const agentsByCluster = useMemo(() => {
     const map = new Map<string, ClusterAgent>();
     for (const agent of agents.data ?? []) {
@@ -25,6 +32,16 @@ export function ClustersPage() {
     }
     return map;
   }, [agents.data]);
+  const inventoryByCluster = useMemo(() => {
+    const map = new Map<string, AcceleratorInventory>();
+    (clusters.data ?? []).forEach((cluster, index) => {
+      const inventory = inventoryQueries[index]?.data;
+      if (inventory) {
+        map.set(cluster.id, inventory);
+      }
+    });
+    return map;
+  }, [clusters.data, inventoryQueries]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -70,12 +87,13 @@ export function ClustersPage() {
                 <th>{t('name')}</th>
                 <th>{t('clusterId')}</th>
                 <th>{t('agentStatus')}</th>
+                <th>{t('acceleratorInventory')}</th>
                 <th>{t('installCommand')}</th>
               </tr>
             </thead>
             <tbody>
               {clusters.data.map((cluster) => (
-                <ClusterRow key={cluster.id} cluster={cluster} agent={agentsByCluster.get(cluster.id)} />
+                <ClusterRow key={cluster.id} cluster={cluster} agent={agentsByCluster.get(cluster.id)} inventory={inventoryByCluster.get(cluster.id)} />
               ))}
             </tbody>
           </table>
@@ -85,7 +103,7 @@ export function ClustersPage() {
   );
 }
 
-function ClusterRow({ cluster, agent }: { cluster: InferenceCluster; agent?: ClusterAgent }) {
+function ClusterRow({ cluster, agent, inventory }: { cluster: InferenceCluster; agent?: ClusterAgent; inventory?: AcceleratorInventory }) {
   const { t } = useI18n();
   const command = agentCommand(cluster.id);
   return (
@@ -102,6 +120,13 @@ function ClusterRow({ cluster, agent }: { cluster: InferenceCluster; agent?: Clu
         <div className="muted">{t('version')}: {agent?.version || t('unknown')}</div>
         <div className="muted">{t('lastHeartbeat')}: {formatDate(agent?.lastHeartbeat, t('never'))}</div>
         <div className="muted">{t('capabilities')}: {formatCapabilities(agent?.capabilities)}</div>
+        <div className="muted">{t('inventoryRevision')}: {agent?.lastInventoryRevision || '-'}</div>
+      </td>
+      <td>
+        <span className={`badge ${inventory?.freshness === 'fresh' ? '' : 'muted'}`}>{inventory?.freshness || agent?.lastInventoryFreshness || t('missing')}</span>
+        <div className="muted">{t('nodeCount')}: {inventory?.nodes?.length ?? 0}</div>
+        <div className="muted">{t('observedAt')}: {formatDate(inventory?.observedAt || agent?.lastInventoryObservedAt, t('never'))}</div>
+        <div className="muted">{t('probeStatus')}: {formatProbeStatuses(inventory?.probeStatuses)}</div>
       </td>
       <td>
         <p className="muted">{t('copyHint')}</p>
@@ -113,7 +138,7 @@ function ClusterRow({ cluster, agent }: { cluster: InferenceCluster; agent?: Clu
 
 function agentCommand(clusterId: string) {
   const { baseUrl, token } = getApiSettings();
-  return `cd src\ngo run ./cmd/cluster-agent \\\n  -management-url ${baseUrl} \\\n  -cluster-id ${clusterId} \\\n  -auth-token ${token || '<token>'} \\\n  -capability dynamo=true,backend=vllm`;
+  return `cd src\ngo run ./cmd/cluster-agent \\\n  -management-url ${baseUrl} \\\n  -cluster-id ${clusterId} \\\n  -auth-token ${token || '<token>'} \\\n  -executor-mode fake \\\n  -capability dynamo=true,backend=vllm`;
 }
 
 function formatCapabilities(capabilities?: Record<string, string>) {
@@ -121,6 +146,13 @@ function formatCapabilities(capabilities?: Record<string, string>) {
     return '-';
   }
   return Object.entries(capabilities).map(([key, value]) => `${key}=${value}`).join(', ');
+}
+
+function formatProbeStatuses(probes?: Array<{ name: string; status: string; message?: string }>) {
+  if (!probes || probes.length === 0) {
+    return '-';
+  }
+  return probes.map((probe) => `${probe.name}=${probe.status}`).join(', ');
 }
 
 function formatDate(value: string | undefined, fallback: string) {

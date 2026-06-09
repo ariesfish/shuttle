@@ -41,6 +41,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects", s.listProjects)
 	mux.HandleFunc("POST /v1/clusters", s.createCluster)
 	mux.HandleFunc("GET /v1/clusters", s.listClusters)
+	mux.HandleFunc("GET /v1/clusters/{clusterID}/accelerator-inventory", s.getAcceleratorInventory)
+	mux.HandleFunc("POST /v1/clusters/{clusterID}/accelerator-inventory", s.reportAcceleratorInventory)
 	mux.HandleFunc("POST /v1/agents/register", s.registerAgent)
 	mux.HandleFunc("GET /v1/agents", s.listAgents)
 	mux.HandleFunc("POST /v1/agents/{agentID}/heartbeat", s.heartbeatAgent)
@@ -98,6 +100,23 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 	clusters, err := s.store.ListClusters()
 	writeResult(w, clusters, http.StatusOK, err)
+}
+
+func (s *Server) getAcceleratorInventory(w http.ResponseWriter, r *http.Request) {
+	inventory, err := s.store.GetAcceleratorInventory(r.PathValue("clusterID"))
+	writeResult(w, inventory, http.StatusOK, err)
+}
+
+func (s *Server) reportAcceleratorInventory(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "admin", "operator", "agent") {
+		return
+	}
+	var req ReportAcceleratorInventoryRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	inventory, err := s.store.ReportAcceleratorInventory(r.PathValue("clusterID"), req)
+	writeResult(w, inventory, http.StatusOK, err)
 }
 
 func (s *Server) registerAgent(w http.ResponseWriter, r *http.Request) {

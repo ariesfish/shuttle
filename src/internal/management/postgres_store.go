@@ -104,4 +104,7 @@ func normalizeStoreData(data *storeData) {
 	if data.Tasks == nil {
 		data.Tasks = map[string]Task{}
 	}
+	if data.AcceleratorInventory == nil {
+		data.AcceleratorInventory = map[string]AcceleratorInventory{}
+	}
 }

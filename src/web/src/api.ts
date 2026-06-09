@@ -13,9 +13,50 @@ export interface ClusterAgent {
   clusterId: string;
   version?: string;
   capabilities?: Record<string, string>;
+  lastInventoryRevision?: string;
+  lastInventoryFreshness?: string;
+  lastInventoryObservedAt?: string;
+  lastInventoryReportedAt?: string;
   lastHeartbeat?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AcceleratorInventory {
+  clusterId: string;
+  agentId?: string;
+  schemaVersion?: string;
+  revision?: string;
+  observedAt?: string;
+  reportedAt?: string;
+  freshness: 'fresh' | 'missing' | 'unsupported' | string;
+  nodes?: AcceleratorInventoryNode[];
+  probeStatuses?: AcceleratorInventoryProbe[];
+  collectionMetadata?: Record<string, string>;
+}
+
+export interface AcceleratorInventoryNode {
+  name: string;
+  labels?: Record<string, string>;
+  taints?: string[];
+  capacity?: Record<string, string>;
+  allocatable?: Record<string, string>;
+  accelerators?: AcceleratorInventoryAccelerator[];
+  observedAt?: string;
+}
+
+export interface AcceleratorInventoryAccelerator {
+  vendor: string;
+  product?: string;
+  deviceCount?: number;
+  memoryMiB?: number;
+  vendorDetails?: Record<string, string>;
+}
+
+export interface AcceleratorInventoryProbe {
+  name: string;
+  status: string;
+  message?: string;
 }
 
 export interface CreateClusterInput {
@@ -248,6 +289,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   listClusters: () => request<InferenceCluster[]>('/v1/clusters'),
+  getAcceleratorInventory: (clusterId: string) => request<AcceleratorInventory>(`/v1/clusters/${clusterId}/accelerator-inventory`),
   createCluster: (input: CreateClusterInput) => request<InferenceCluster>('/v1/clusters', {
     method: 'POST',
     body: JSON.stringify(input),

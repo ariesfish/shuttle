@@ -1,6 +1,8 @@
 package management
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +29,7 @@ type ManagementStore interface {
 	ProjectStore
 	ClusterStore
 	ClusterAgentStore
+	AcceleratorInventoryStore
 	ModelArtifactStore
 	RecipeStore
 	ServingApplicationStore
@@ -51,6 +54,11 @@ type ClusterAgentStore interface {
 	RegisterAgent(RegisterAgentRequest) (ClusterAgent, error)
 	HeartbeatAgent(string, HeartbeatRequest) (ClusterAgent, error)
 	ListAgents() ([]ClusterAgent, error)
+}
+
+type AcceleratorInventoryStore interface {
+	ReportAcceleratorInventory(clusterID string, req ReportAcceleratorInventoryRequest) (AcceleratorInventory, error)
+	GetAcceleratorInventory(clusterID string) (AcceleratorInventory, error)
 }
 
 type ModelArtifactStore interface {
@@ -98,16 +106,17 @@ type FileStore struct {
 }
 
 type storeData struct {
-	NextID              int                                     `json:"nextId"`
-	Projects            map[string]Project                      `json:"projects"`
-	Clusters            map[string]InferenceCluster             `json:"clusters"`
-	Agents              map[string]ClusterAgent                 `json:"agents"`
-	ModelArtifacts      map[string]ModelArtifact                `json:"modelArtifacts"`
-	ServingApplications map[string]ServingApplication           `json:"servingApplications"`
-	Transitions         map[string]ServingApplicationTransition `json:"transitions"`
-	Endpoints           map[string]EndpointRegistryEntry        `json:"endpoints"`
-	AuditRecords        map[string]AuditRecord                  `json:"auditRecords"`
-	Tasks               map[string]Task                         `json:"tasks"`
+	NextID               int                                     `json:"nextId"`
+	Projects             map[string]Project                      `json:"projects"`
+	Clusters             map[string]InferenceCluster             `json:"clusters"`
+	Agents               map[string]ClusterAgent                 `json:"agents"`
+	ModelArtifacts       map[string]ModelArtifact                `json:"modelArtifacts"`
+	ServingApplications  map[string]ServingApplication           `json:"servingApplications"`
+	Transitions          map[string]ServingApplicationTransition `json:"transitions"`
+	Endpoints            map[string]EndpointRegistryEntry        `json:"endpoints"`
+	AuditRecords         map[string]AuditRecord                  `json:"auditRecords"`
+	Tasks                map[string]Task                         `json:"tasks"`
+	AcceleratorInventory map[string]AcceleratorInventory         `json:"acceleratorInventory"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -126,16 +135,17 @@ func NewFileStoreWithRecipes(path string, recipes *RecipeRegistry) (*FileStore, 
 
 func newStoreData() storeData {
 	return storeData{
-		NextID:              1,
-		Projects:            map[string]Project{},
-		Clusters:            map[string]InferenceCluster{},
-		Agents:              map[string]ClusterAgent{},
-		ModelArtifacts:      map[string]ModelArtifact{},
-		ServingApplications: map[string]ServingApplication{},
-		Transitions:         map[string]ServingApplicationTransition{},
-		Endpoints:           map[string]EndpointRegistryEntry{},
-		AuditRecords:        map[string]AuditRecord{},
-		Tasks:               map[string]Task{},
+		NextID:               1,
+		Projects:             map[string]Project{},
+		Clusters:             map[string]InferenceCluster{},
+		Agents:               map[string]ClusterAgent{},
+		ModelArtifacts:       map[string]ModelArtifact{},
+		ServingApplications:  map[string]ServingApplication{},
+		Transitions:          map[string]ServingApplicationTransition{},
+		Endpoints:            map[string]EndpointRegistryEntry{},
+		AuditRecords:         map[string]AuditRecord{},
+		Tasks:                map[string]Task{},
+		AcceleratorInventory: map[string]AcceleratorInventory{},
 	}
 }
 
@@ -261,6 +271,15 @@ func (s *FileStore) HeartbeatAgent(id string, req HeartbeatRequest) (ClusterAgen
 	if req.Capabilities != nil {
 		agent.Capabilities = cloneStringMap(req.Capabilities)
 	}
+	if strings.TrimSpace(req.LastInventoryRevision) != "" {
+		agent.LastInventoryRevision = strings.TrimSpace(req.LastInventoryRevision)
+	}
+	if strings.TrimSpace(req.LastInventoryFreshness) != "" {
+		agent.LastInventoryFreshness = strings.TrimSpace(req.LastInventoryFreshness)
+	}
+	if !req.LastInventoryObservedAt.IsZero() {
+		agent.LastInventoryObservedAt = req.LastInventoryObservedAt.UTC()
+	}
 	agent.LastHeartbeat = now
 	agent.UpdatedAt = now
 	s.data.Agents[id] = agent
@@ -277,6 +296,76 @@ func (s *FileStore) ListAgents() ([]ClusterAgent, error) {
 	}
 	sort.Slice(agents, func(i, j int) bool { return agents[i].CreatedAt.Before(agents[j].CreatedAt) })
 	return agents, nil
+}
+
+func (s *FileStore) ReportAcceleratorInventory(clusterID string, req ReportAcceleratorInventoryRequest) (AcceleratorInventory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	agent, ok := s.data.Agents[req.AgentID]
+	if !ok {
+		return AcceleratorInventory{}, ErrNotFound
+	}
+	if agent.ClusterID != clusterID {
+		return AcceleratorInventory{}, fmt.Errorf("%w: agent does not belong to cluster", ErrInvalidInput)
+	}
+	if _, ok := s.data.Clusters[clusterID]; !ok {
+		return AcceleratorInventory{}, ErrNotFound
+	}
+	schemaVersion := strings.TrimSpace(req.SchemaVersion)
+	if schemaVersion == "" {
+		return AcceleratorInventory{}, fmt.Errorf("%w: schemaVersion is required", ErrInvalidInput)
+	}
+	observedAt := req.ObservedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = s.now().UTC()
+	}
+	nodes := cloneInventoryNodes(req.Nodes)
+	for index := range nodes {
+		if nodes[index].ObservedAt.IsZero() {
+			nodes[index].ObservedAt = observedAt
+		} else {
+			nodes[index].ObservedAt = nodes[index].ObservedAt.UTC()
+		}
+	}
+	now := s.now().UTC()
+	inventory := AcceleratorInventory{
+		ClusterID:          clusterID,
+		AgentID:            req.AgentID,
+		SchemaVersion:      schemaVersion,
+		Revision:           strings.TrimSpace(req.Revision),
+		ObservedAt:         observedAt,
+		ReportedAt:         now,
+		Freshness:          AcceleratorInventoryFreshnessFresh,
+		Nodes:              nodes,
+		ProbeStatuses:      cloneInventoryProbes(req.ProbeStatuses),
+		CollectionMetadata: cloneStringMap(req.CollectionMetadata),
+	}
+	if inventory.Revision == "" {
+		inventory.Revision = acceleratorInventoryRevision(inventory)
+	}
+	s.data.AcceleratorInventory[clusterID] = inventory
+	agent.LastInventoryRevision = inventory.Revision
+	agent.LastInventoryFreshness = string(inventory.Freshness)
+	agent.LastInventoryObservedAt = inventory.ObservedAt
+	agent.LastInventoryReportedAt = inventory.ReportedAt
+	agent.UpdatedAt = now
+	s.data.Agents[agent.ID] = agent
+	return inventory, s.saveLocked()
+}
+
+func (s *FileStore) GetAcceleratorInventory(clusterID string) (AcceleratorInventory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.data.Clusters[clusterID]; !ok {
+		return AcceleratorInventory{}, ErrNotFound
+	}
+	inventory, ok := s.data.AcceleratorInventory[clusterID]
+	if !ok {
+		return AcceleratorInventory{ClusterID: clusterID, Freshness: AcceleratorInventoryFreshnessMissing}, nil
+	}
+	return inventory, nil
 }
 
 func (s *FileStore) CreateModelArtifact(req CreateModelArtifactRequest) (ModelArtifact, error) {
@@ -639,6 +728,48 @@ func (s *FileStore) nextID(prefix string) string {
 	id := fmt.Sprintf("%s-%d", prefix, s.data.NextID)
 	s.data.NextID++
 	return id
+}
+
+func acceleratorInventoryRevision(inventory AcceleratorInventory) string {
+	copy := inventory
+	copy.Revision = ""
+	copy.ReportedAt = time.Time{}
+	contents, err := json.Marshal(copy)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(contents)
+	return hex.EncodeToString(sum[:])
+}
+
+func cloneInventoryNodes(input []AcceleratorInventoryNode) []AcceleratorInventoryNode {
+	if input == nil {
+		return nil
+	}
+	output := make([]AcceleratorInventoryNode, 0, len(input))
+	for _, node := range input {
+		accelerators := make([]AcceleratorInventoryAccelerator, 0, len(node.Accelerators))
+		for _, accelerator := range node.Accelerators {
+			accelerator.VendorDetails = cloneStringMap(accelerator.VendorDetails)
+			accelerators = append(accelerators, accelerator)
+		}
+		node.Labels = cloneStringMap(node.Labels)
+		node.Taints = append([]string(nil), node.Taints...)
+		node.Capacity = cloneStringMap(node.Capacity)
+		node.Allocatable = cloneStringMap(node.Allocatable)
+		node.Accelerators = accelerators
+		output = append(output, node)
+	}
+	return output
+}
+
+func cloneInventoryProbes(input []AcceleratorInventoryProbe) []AcceleratorInventoryProbe {
+	if input == nil {
+		return nil
+	}
+	output := make([]AcceleratorInventoryProbe, len(input))
+	copy(output, input)
+	return output
 }
 
 func (s *FileStore) load() error {

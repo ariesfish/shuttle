@@ -19,10 +19,11 @@ type Config struct {
 }
 
 type Runner struct {
-	client   *ManagementClient
-	config   Config
-	logger   *slog.Logger
-	executor Executor
+	client            *ManagementClient
+	config            Config
+	logger            *slog.Logger
+	executor          Executor
+	inventoryReporter InventoryReporter
 }
 
 func NewRunner(client *ManagementClient, config Config, logger *slog.Logger) *Runner {
@@ -30,11 +31,18 @@ func NewRunner(client *ManagementClient, config Config, logger *slog.Logger) *Ru
 }
 
 func NewRunnerWithExecutor(client *ManagementClient, config Config, logger *slog.Logger, executor Executor) *Runner {
+	return NewRunnerWithInventory(client, config, logger, executor, NoopInventoryReporter{})
+}
+
+func NewRunnerWithInventory(client *ManagementClient, config Config, logger *slog.Logger, executor Executor, inventoryReporter InventoryReporter) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if executor == nil {
 		executor = NewTaskExecutor(nil)
+	}
+	if inventoryReporter == nil {
+		inventoryReporter = NoopInventoryReporter{}
 	}
 	if config.PollInterval == 0 {
 		config.PollInterval = 5 * time.Second
@@ -45,7 +53,7 @@ func NewRunnerWithExecutor(client *ManagementClient, config Config, logger *slog
 	if config.LeaseRenewInterval == 0 {
 		config.LeaseRenewInterval = 10 * time.Second
 	}
-	return &Runner{client: client, config: config, logger: logger, executor: executor}
+	return &Runner{client: client, config: config, logger: logger, executor: executor, inventoryReporter: inventoryReporter}
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -58,6 +66,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 	r.logger.Info("agent registered", "agent_id", agent.ID, "cluster_id", agent.ClusterID)
+	agent = r.reportInventoryOnce(ctx, agent)
 
 	heartbeatTicker := time.NewTicker(r.config.HeartbeatInterval)
 	defer heartbeatTicker.Stop()
@@ -70,8 +79,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-heartbeatTicker.C:
 			if _, err := r.client.Heartbeat(ctx, agent.ID, management.HeartbeatRequest{
-				Version:      r.config.Version,
-				Capabilities: r.config.Capabilities,
+				Version:                 r.config.Version,
+				Capabilities:            r.config.Capabilities,
+				LastInventoryRevision:   agent.LastInventoryRevision,
+				LastInventoryFreshness:  agent.LastInventoryFreshness,
+				LastInventoryObservedAt: agent.LastInventoryObservedAt,
 			}); err != nil {
 				r.logger.Error("heartbeat failed", "error", err)
 			} else {
@@ -81,6 +93,28 @@ func (r *Runner) Run(ctx context.Context) error {
 			r.pollOnce(ctx, agent)
 		}
 	}
+}
+
+func (r *Runner) reportInventoryOnce(ctx context.Context, agent management.ClusterAgent) management.ClusterAgent {
+	request, ok, err := r.inventoryReporter.Report(ctx, agent.ClusterID, agent)
+	if err != nil {
+		r.logger.Error("inventory report build failed", "error", err)
+		return agent
+	}
+	if !ok {
+		return agent
+	}
+	inventory, err := r.client.ReportAcceleratorInventory(ctx, agent.ClusterID, request)
+	if err != nil {
+		r.logger.Error("inventory report failed", "error", err)
+		return agent
+	}
+	agent.LastInventoryRevision = inventory.Revision
+	agent.LastInventoryFreshness = string(inventory.Freshness)
+	agent.LastInventoryObservedAt = inventory.ObservedAt
+	agent.LastInventoryReportedAt = inventory.ReportedAt
+	r.logger.Info("inventory reported", "revision", inventory.Revision, "nodes", len(inventory.Nodes))
+	return agent
 }
 
 func (r *Runner) pollOnce(ctx context.Context, agent management.ClusterAgent) {

@@ -40,6 +40,8 @@ go run ./cmd/cluster-agent \
   -capability dynamo=true,backend=vllm
 ```
 
+In fake executor mode, the Cluster Agent also reports a synthetic Accelerator Inventory snapshot for local Phase 2 UI/API smoke testing. Kubectl/NVIDIA/RDMA discovery is intentionally not used in this mode.
+
 ## Smoke Test
 
 ```bash
@@ -112,9 +114,10 @@ curl -s -X POST localhost:8080/v1/apps/app-5/tasks/retire
 
 For `RetireDeployment`, the Cluster Agent deletes the rendered `DynamoGraphDeployment` and waits for it to disappear.
 
-List registered endpoints, observability entry points, and audit records:
+List Accelerator Inventory, registered endpoints, observability entry points, and audit records:
 
 ```bash
+curl -s localhost:8080/v1/clusters/cluster-2/accelerator-inventory
 curl -s localhost:8080/v1/endpoints
 curl -s localhost:8080/v1/apps/app-5/observability
 curl -s localhost:8080/v1/audit-records
