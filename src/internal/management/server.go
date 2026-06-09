@@ -64,6 +64,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{appID}/transitions", s.listServingApplicationTransitions)
 	mux.HandleFunc("GET /v1/apps/{appID}/observability", s.getObservabilityEntry)
 	mux.HandleFunc("GET /v1/apps/{appID}/observability/summary", s.getObservabilitySummary)
+	mux.HandleFunc("GET /v1/apps/{appID}/observability/entry-points", s.getAppProductionObservabilityEntryPoints)
+	mux.HandleFunc("GET /v1/clusters/{clusterID}/observability/entry-points", s.getClusterProductionObservabilityEntryPoints)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
 	mux.HandleFunc("POST /v1/tuning-records", s.createTuningRecord)
 	mux.HandleFunc("GET /v1/tuning-records", s.listTuningRecords)
@@ -249,6 +251,16 @@ func (s *Server) getObservabilityEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getObservabilitySummary(w http.ResponseWriter, r *http.Request) {
 	summary, err := s.observability.Summary(r.Context(), r.PathValue("appID"))
 	writeResult(w, summary, http.StatusOK, err)
+}
+
+func (s *Server) getAppProductionObservabilityEntryPoints(w http.ResponseWriter, r *http.Request) {
+	entryPoints, err := s.store.GetProductionObservabilityEntryPoints("", r.PathValue("appID"))
+	writeResult(w, entryPoints, http.StatusOK, err)
+}
+
+func (s *Server) getClusterProductionObservabilityEntryPoints(w http.ResponseWriter, r *http.Request) {
+	entryPoints, err := s.store.GetProductionObservabilityEntryPoints(r.PathValue("clusterID"), "")
+	writeResult(w, entryPoints, http.StatusOK, err)
 }
 
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {

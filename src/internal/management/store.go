@@ -91,6 +91,7 @@ type ServingApplicationStore interface {
 
 type ObservabilityStore interface {
 	GetObservabilityEntry(string) (ObservabilityEntry, error)
+	GetProductionObservabilityEntryPoints(clusterID string, appID string) (ProductionObservabilityEntryPoints, error)
 }
 
 type TuningRecordStore interface {
@@ -749,6 +750,61 @@ func (s *FileStore) ListEndpoints() ([]EndpointRegistryEntry, error) {
 	}
 	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].CreatedAt.Before(endpoints[j].CreatedAt) })
 	return endpoints, nil
+}
+
+func (s *FileStore) GetProductionObservabilityEntryPoints(clusterID string, appID string) (ProductionObservabilityEntryPoints, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if appID != "" {
+		app, ok := s.data.ServingApplications[appID]
+		if !ok {
+			return ProductionObservabilityEntryPoints{}, ErrNotFound
+		}
+		clusterID = app.Placement.ClusterID
+	}
+	cluster, ok := s.data.Clusters[clusterID]
+	if !ok {
+		return ProductionObservabilityEntryPoints{}, ErrNotFound
+	}
+	entry := ProductionObservabilityEntryPoints{ClusterID: cluster.ID, ServingApplicationID: appID, Links: []ObservabilityLink{}}
+	if cluster.GrafanaURL != "" {
+		entry.Links = append(entry.Links, ObservabilityLink{Name: "global-grafana", Type: "grafana", URL: strings.TrimRight(cluster.GrafanaURL, "/") + "/d/inference-fleet"})
+		entry.Links = append(entry.Links, ObservabilityLink{Name: "accelerator-inventory", Type: "grafana", URL: strings.TrimRight(cluster.GrafanaURL, "/") + "/d/accelerator-inventory"})
+	} else {
+		entry.TelemetryCoverage = append(entry.TelemetryCoverage, "missing global dashboard link")
+		entry.Alerts = append(entry.Alerts, AlertEntry{Severity: "warning", Reason: "missing_grafana", Message: "cluster has no Grafana URL"})
+	}
+	if cluster.PrometheusURL == "" {
+		entry.TelemetryCoverage = append(entry.TelemetryCoverage, "missing Prometheus data")
+		entry.Alerts = append(entry.Alerts, AlertEntry{Severity: "warning", Reason: "missing_prometheus", Message: "cluster has no Prometheus URL"})
+	}
+	entry.Links = append(entry.Links, ObservabilityLink{Name: "logs", Type: "logs", URL: ""})
+	inventory := s.data.AcceleratorInventory[cluster.ID]
+	if inventory.ClusterID == "" {
+		entry.TelemetryCoverage = append(entry.TelemetryCoverage, "missing inventory")
+		entry.Alerts = append(entry.Alerts, AlertEntry{Severity: "warning", Reason: "missing_inventory", Message: "accelerator inventory is missing"})
+		return entry, nil
+	}
+	entry.InventoryRevision = inventory.Revision
+	if isInventoryStale(s.now().UTC(), inventory.ReportedAt) {
+		entry.TelemetryCoverage = append(entry.TelemetryCoverage, "stale inventory")
+		entry.Alerts = append(entry.Alerts, AlertEntry{Severity: "warning", Reason: "stale_inventory", Message: "accelerator inventory is stale"})
+	}
+	if !hasProbeStatus(inventory, "nvidia-dcgm", "ok") {
+		entry.TelemetryCoverage = append(entry.TelemetryCoverage, "missing DCGM")
+		entry.Alerts = append(entry.Alerts, AlertEntry{Severity: "warning", Reason: "missing_dcgm", Message: "DCGM telemetry is not observed"})
+	}
+	return entry, nil
+}
+
+func hasProbeStatus(inventory AcceleratorInventory, name string, status string) bool {
+	for _, probe := range inventory.ProbeStatuses {
+		if probe.Name == name && probe.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *FileStore) GetObservabilityEntry(appID string) (ObservabilityEntry, error) {

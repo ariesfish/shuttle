@@ -227,6 +227,27 @@ type OptimizationIntent struct {
 	ProfilingMode string   `json:"profilingMode"`
 }
 
+type ObservabilityLink struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	URL  string `json:"url,omitempty"`
+}
+
+type AlertEntry struct {
+	Severity string `json:"severity"`
+	Reason   string `json:"reason"`
+	Message  string `json:"message"`
+}
+
+type ProductionObservabilityEntryPoints struct {
+	ClusterID            string              `json:"clusterId"`
+	ServingApplicationID string              `json:"servingApplicationId,omitempty"`
+	InventoryRevision    string              `json:"inventoryRevision,omitempty"`
+	Links                []ObservabilityLink `json:"links"`
+	Alerts               []AlertEntry        `json:"alerts,omitempty"`
+	TelemetryCoverage    []string            `json:"telemetryCoverage,omitempty"`
+}
+
 type ObservabilityEntry struct {
 	ServingApplicationID string            `json:"servingApplicationId"`
 	ClusterID            string            `json:"clusterId"`

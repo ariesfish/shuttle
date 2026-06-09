@@ -52,6 +52,12 @@ export function ServingAppsPage() {
     mutationFn: api.createTuningRecord,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tuning-records', selectedAppId] }),
   });
+  const observabilityEntryPoints = useQuery({
+    queryKey: ['observability-entry-points', selectedAppId],
+    queryFn: () => api.getProductionObservabilityEntryPoints(selectedAppId),
+    enabled: Boolean(selectedAppId),
+    refetchInterval: 10000,
+  });
   const observabilitySummary = useQuery({
     queryKey: ['observability-summary', selectedAppId],
     queryFn: () => api.getObservabilitySummary(selectedAppId),
@@ -91,7 +97,7 @@ export function ServingAppsPage() {
             />
           ) : apps.isLoading ? null : <p className="muted">{t('noData')}</p>}
         </section>
-        <ServingAppDetails selectedAppId={selectedAppId} tuningRecords={tuningRecords.data} tuningError={tuningRecords.error?.message || createTuningRecord.error?.message} tuningCreating={createTuningRecord.isPending} onCreateTuningRecord={(reason) => createTuningRecord.mutate({ servingApplicationId: selectedAppId, reason, benchmarkSummary: { source: 'manual-summary' }, plannerSettings: {}, recommendations: [] })} summary={observabilitySummary.data} summaryError={observabilitySummary.error?.message} transitions={transitions.data} diagnosticsTask={control.latestDiagnosticsTask} />
+        <ServingAppDetails selectedAppId={selectedAppId} tuningRecords={tuningRecords.data} tuningError={tuningRecords.error?.message || createTuningRecord.error?.message} tuningCreating={createTuningRecord.isPending} onCreateTuningRecord={(reason) => createTuningRecord.mutate({ servingApplicationId: selectedAppId, reason, benchmarkSummary: { source: 'manual-summary' }, plannerSettings: {}, recommendations: [] })} entryPoints={observabilityEntryPoints.data} summary={observabilitySummary.data} summaryError={observabilitySummary.error?.message} transitions={transitions.data} diagnosticsTask={control.latestDiagnosticsTask} />
         <RecentTasks tasks={tasks.data} />
       </section>
     </div>

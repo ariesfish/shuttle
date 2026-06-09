@@ -40,6 +40,10 @@ func (s *fakeObservabilityStore) GetObservabilityEntry(string) (ObservabilityEnt
 	return s.entry, nil
 }
 
+func (s *fakeObservabilityStore) GetProductionObservabilityEntryPoints(string, string) (ProductionObservabilityEntryPoints, error) {
+	return ProductionObservabilityEntryPoints{}, nil
+}
+
 func TestServingApplicationObservabilityRecordsPartialQueryFailures(t *testing.T) {
 	queryA := PrometheusQuery{Name: "ok", Description: "successful query", Query: "up"}
 	queryB := PrometheusQuery{Name: "fail", Description: "failed query", Query: "down"}

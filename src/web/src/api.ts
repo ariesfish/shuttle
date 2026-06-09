@@ -295,6 +295,27 @@ export interface EndpointRegistryEntry {
   updatedAt: string;
 }
 
+export interface ObservabilityLink {
+  name: string;
+  type: string;
+  url?: string;
+}
+
+export interface AlertEntry {
+  severity: string;
+  reason: string;
+  message: string;
+}
+
+export interface ProductionObservabilityEntryPoints {
+  clusterId: string;
+  servingApplicationId?: string;
+  inventoryRevision?: string;
+  links: ObservabilityLink[];
+  alerts?: AlertEntry[];
+  telemetryCoverage?: string[];
+}
+
 export interface ObservabilityEntry {
   servingApplicationId: string;
   clusterId: string;
@@ -400,5 +421,6 @@ export const api = {
   }),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/apps/${appId}/observability`),
   getObservabilitySummary: (appId: string) => request<ObservabilitySummary>(`/v1/apps/${appId}/observability/summary`),
+  getProductionObservabilityEntryPoints: (appId: string) => request<ProductionObservabilityEntryPoints>(`/v1/apps/${appId}/observability/entry-points`),
   listAuditRecords: () => request<AuditRecord[]>('/v1/audit-records'),
 };

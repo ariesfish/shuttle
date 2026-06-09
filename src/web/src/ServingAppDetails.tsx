@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { type ObservabilitySummary, type ServingApplicationTransition, type Task, type TuningRecord } from './api';
+import { type ObservabilitySummary, type ProductionObservabilityEntryPoints, type ServingApplicationTransition, type Task, type TuningRecord } from './api';
 import { useI18n } from './i18n';
 
-export function ServingAppDetails({ selectedAppId, summary, summaryError, transitions, diagnosticsTask, tuningRecords, tuningError, tuningCreating, onCreateTuningRecord }: { selectedAppId: string; summary?: ObservabilitySummary; summaryError?: string; transitions?: ServingApplicationTransition[]; diagnosticsTask?: Task; tuningRecords?: TuningRecord[]; tuningError?: string; tuningCreating: boolean; onCreateTuningRecord: (reason: string) => void }) {
+export function ServingAppDetails({ selectedAppId, summary, summaryError, entryPoints, transitions, diagnosticsTask, tuningRecords, tuningError, tuningCreating, onCreateTuningRecord }: { selectedAppId: string; summary?: ObservabilitySummary; summaryError?: string; entryPoints?: ProductionObservabilityEntryPoints; transitions?: ServingApplicationTransition[]; diagnosticsTask?: Task; tuningRecords?: TuningRecord[]; tuningError?: string; tuningCreating: boolean; onCreateTuningRecord: (reason: string) => void }) {
   const { t } = useI18n();
   return (
     <section className="card">
@@ -11,6 +11,7 @@ export function ServingAppDetails({ selectedAppId, summary, summaryError, transi
       {selectedAppId ? (
         <div className="grid">
           <TuningRecords records={tuningRecords} error={tuningError} creating={tuningCreating} onCreate={onCreateTuningRecord} />
+          <ObservabilityEntryPointsCard entryPoints={entryPoints} />
           <ObservabilitySummaryCard summary={summary} error={summaryError} />
           <div>
             <h3>Transitions</h3>
@@ -47,6 +48,23 @@ function TuningRecords({ records, error, creating, onCreate }: { records?: Tunin
           {record.recommendations?.length ? <div>{record.recommendations.join(', ')}</div> : null}
         </div>
       )) ?? <p className="muted">No tuning records.</p>}
+    </div>
+  );
+}
+
+function ObservabilityEntryPointsCard({ entryPoints }: { entryPoints?: ProductionObservabilityEntryPoints }) {
+  return (
+    <div>
+      <h3>Observability Entry Points</h3>
+      {!entryPoints ? <p className="muted">Loading observability entry points...</p> : null}
+      {entryPoints?.links.map((link) => (
+        <div key={`${link.type}-${link.name}`} className="card" style={{ marginBottom: 8 }}>
+          <strong>{link.name}</strong> <span className="badge muted">{link.type}</span>
+          {link.url ? <div><code>{link.url}</code></div> : <div className="muted">No URL configured.</div>}
+        </div>
+      ))}
+      {entryPoints?.alerts?.map((alert) => <p key={alert.reason} className="error">{alert.reason}: {alert.message}</p>)}
+      {entryPoints?.telemetryCoverage?.length ? <p className="muted">Coverage: {entryPoints.telemetryCoverage.join(', ')}</p> : null}
     </div>
   );
 }
