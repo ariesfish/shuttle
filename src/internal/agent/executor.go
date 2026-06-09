@@ -452,77 +452,42 @@ func (c KubectlDiagnosticsCollector) Fetch(ctx context.Context, ref ResourceRef)
 	if maxBytes <= 0 {
 		maxBytes = 16 * 1024
 	}
-	selector := "inference.zhiliu.dev/serving-application=" + ref.Name
-	dynamoSelector := "nvidia.com/dynamo-graph-deployment-name=" + ref.Name
-	commands := []struct {
-		name string
-		args []string
-	}{
-		{name: "dynamographdeployment", args: []string{"-n", ref.Namespace, "get", "dynamographdeployment", ref.Name, "-o", "yaml"}},
-		{name: "dynamocomponentdeploymentsByLabel", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", "-l", selector, "-o", "wide"}},
-		{name: "dynamocomponentdeploymentByName", args: []string{"-n", ref.Namespace, "get", "dynamocomponentdeployment", ref.Name, "-o", "wide"}},
-		{name: "podsByLabel", args: []string{"-n", ref.Namespace, "get", "pod", "-l", selector, "-o", "wide"}},
-		{name: "podsByDynamoLabel", args: []string{"-n", ref.Namespace, "get", "pod", "-l", dynamoSelector, "-o", "wide"}},
-		{name: "podsByNamePrefix", args: []string{"-n", ref.Namespace, "get", "pod", "-o", "name"}},
-		{name: "events", args: []string{"-n", ref.Namespace, "get", "events", "--sort-by=.lastTimestamp"}},
-		{name: "currentLogsByLabel", args: []string{"-n", ref.Namespace, "logs", "-l", selector, "--all-containers=true", "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true"}},
-		{name: "previousLogsByLabel", args: []string{"-n", ref.Namespace, "logs", "-l", selector, "--all-containers=true", "--previous", "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true"}},
-	}
+	plan := NewClusterDiagnosticsPlan(ref)
+	commands := plan.EvidenceCommands(tailLines)
 	sections := make([]DiagnosticsSection, 0, len(commands)+2)
 	var podNames []string
 	for _, command := range commands {
-		output, err := runKubectl(ctx, kubectl, command.args...)
-		if command.name == "podsByNamePrefix" {
+		output, err := runKubectl(ctx, kubectl, command.Args...)
+		if command.Name == "podsByNamePrefix" {
 			podNames = podNamesByPrefix(output, ref.Name)
 			output = strings.Join(podNames, "\n")
 		}
-		section := DiagnosticsSection{Name: command.name, Output: truncateBytes(output, maxBytes)}
+		section := DiagnosticsSection{Name: command.Name, Output: truncateBytes(output, maxBytes)}
 		if err != nil {
 			section.Error = strings.TrimSpace(err.Error())
 		}
 		sections = append(sections, section)
 	}
-	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, ref.Namespace, podNames, false, tailLines, maxBytes))
-	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, ref.Namespace, podNames, true, tailLines, maxBytes))
+	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, plan, podNames, false, tailLines, maxBytes))
+	sections = append(sections, c.logsForPods(ctx, runKubectl, kubectl, plan, podNames, true, tailLines, maxBytes))
 	return DiagnosticsResult{Sections: sections}, nil
 }
 
-func (c KubectlDiagnosticsCollector) logsForPods(ctx context.Context, runKubectl func(context.Context, string, ...string) (string, error), kubectl string, namespace string, podNames []string, previous bool, tailLines int, maxBytes int) DiagnosticsSection {
-	sectionName := "currentLogsByNamePrefix"
-	if previous {
-		sectionName = "previousLogsByNamePrefix"
-	}
+func (c KubectlDiagnosticsCollector) logsForPods(ctx context.Context, runKubectl func(context.Context, string, ...string) (string, error), kubectl string, plan ClusterDiagnosticsPlan, podNames []string, previous bool, tailLines int, maxBytes int) DiagnosticsSection {
+	sectionName := plan.PodLogSectionName(previous)
 	if len(podNames) == 0 {
 		return DiagnosticsSection{Name: sectionName, Output: "no pods matched resource name prefix"}
 	}
 	var outputs []string
 	var sectionErrors []string
-	for _, podName := range podNames {
-		args := []string{"-n", namespace, "logs", podName, "--all-containers=true"}
-		if previous {
-			args = append(args, "--previous")
-		}
-		args = append(args, "--tail", fmt.Sprintf("%d", tailLines), "--prefix=true")
-		output, err := runKubectl(ctx, kubectl, args...)
-		outputs = append(outputs, "# "+podName+"\n"+output)
+	for _, command := range plan.PodLogCommands(podNames, previous, tailLines) {
+		output, err := runKubectl(ctx, kubectl, command.Args...)
+		outputs = append(outputs, "# "+command.Name+"\n"+output)
 		if err != nil {
-			sectionErrors = append(sectionErrors, podName+": "+strings.TrimSpace(err.Error()))
+			sectionErrors = append(sectionErrors, command.Name+": "+strings.TrimSpace(err.Error()))
 		}
 	}
 	return DiagnosticsSection{Name: sectionName, Output: truncateBytes(strings.Join(outputs, "\n"), maxBytes), Error: strings.Join(sectionErrors, "\n")}
-}
-
-func podNamesByPrefix(output string, prefix string) []string {
-	var podNames []string
-	for _, line := range strings.Split(output, "\n") {
-		name := strings.TrimSpace(line)
-		name = strings.TrimPrefix(name, "pod/")
-		if name == "" || !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		podNames = append(podNames, name)
-	}
-	return podNames
 }
 
 func (w KubectlResourceWatcher) Wait(ctx context.Context, ref ResourceRef) (WatchResult, error) {
