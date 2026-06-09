@@ -165,21 +165,22 @@ const (
 )
 
 type ServingApplication struct {
-	ID            string                  `json:"id"`
-	ProjectID     string                  `json:"projectId"`
-	Name          string                  `json:"name"`
-	Model         ModelIntent             `json:"model"`
-	Placement     PlacementIntent         `json:"placement"`
-	Runtime       RuntimeIntent           `json:"runtime"`
-	Service       ServiceIntent           `json:"service"`
-	Optimization  OptimizationIntent      `json:"optimization"`
-	DesiredState  string                  `json:"desiredState"`
-	Phase         ServingApplicationPhase `json:"phase"`
-	ActiveVersion int                     `json:"activeVersion"`
-	EndpointURL   string                  `json:"endpointUrl,omitempty"`
-	GrafanaURL    string                  `json:"grafanaUrl,omitempty"`
-	CreatedAt     time.Time               `json:"createdAt"`
-	UpdatedAt     time.Time               `json:"updatedAt"`
+	ID                          string                  `json:"id"`
+	ProjectID                   string                  `json:"projectId"`
+	Name                        string                  `json:"name"`
+	Model                       ModelIntent             `json:"model"`
+	Placement                   PlacementIntent         `json:"placement"`
+	Runtime                     RuntimeIntent           `json:"runtime"`
+	Service                     ServiceIntent           `json:"service"`
+	Optimization                OptimizationIntent      `json:"optimization"`
+	DesiredState                string                  `json:"desiredState"`
+	Phase                       ServingApplicationPhase `json:"phase"`
+	ActiveVersion               int                     `json:"activeVersion"`
+	EndpointURL                 string                  `json:"endpointUrl,omitempty"`
+	GrafanaURL                  string                  `json:"grafanaUrl,omitempty"`
+	ValidationInventoryRevision string                  `json:"validationInventoryRevision,omitempty"`
+	CreatedAt                   time.Time               `json:"createdAt"`
+	UpdatedAt                   time.Time               `json:"updatedAt"`
 }
 
 type ServingApplicationTransition struct {

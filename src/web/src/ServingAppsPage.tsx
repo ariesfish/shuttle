@@ -17,6 +17,7 @@ export function ServingAppsPage() {
   const apps = useQuery({ queryKey: ['apps'], queryFn: api.listServingApplications, refetchInterval: 2000 });
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: api.listTasks, refetchInterval: 2000 });
   const endpoints = useQuery({ queryKey: ['endpoints'], queryFn: api.listEndpoints, refetchInterval: 2000 });
+  const poolSummaries = useQuery({ queryKey: ['acceleratorPoolSummaries'], queryFn: () => api.listAcceleratorPoolSummaries(), refetchInterval: 5000 });
 
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const [selectedAppId, setSelectedAppId] = useState('');
@@ -58,6 +59,7 @@ export function ServingAppsPage() {
           clusters={clusters.data ?? []}
           artifacts={artifacts.data ?? []}
           creationPlans={creationPlans.data}
+          poolSummaries={poolSummaries.data ?? []}
           creating={createApp.isPending}
           createError={createApp.error?.message}
           onArtifactChange={setSelectedArtifactId}

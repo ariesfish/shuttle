@@ -1,13 +1,14 @@
 import { FormEvent, useState } from 'react';
-import { type CreateServingApplicationInput, type InferenceCluster, type ModelArtifact, type Project, type ServingApplicationCreationPlan } from './api';
+import { type AcceleratorPoolSummary, type CreateServingApplicationInput, type InferenceCluster, type ModelArtifact, type Project, type ServingApplicationCreationPlan } from './api';
 import { useI18n } from './i18n';
 
-export function ServingAppCreateForm({ projects, clusters, artifacts, creationPlans, creating, createError, onArtifactChange, onCreate }: { projects: Project[]; clusters: InferenceCluster[]; artifacts: ModelArtifact[]; creationPlans?: ServingApplicationCreationPlan[]; creating: boolean; createError?: string; onArtifactChange: (artifactId: string) => void; onCreate: (input: CreateServingApplicationInput) => void }) {
+export function ServingAppCreateForm({ projects, clusters, artifacts, creationPlans, poolSummaries, creating, createError, onArtifactChange, onCreate }: { projects: Project[]; clusters: InferenceCluster[]; artifacts: ModelArtifact[]; creationPlans?: ServingApplicationCreationPlan[]; poolSummaries: AcceleratorPoolSummary[]; creating: boolean; createError?: string; onArtifactChange: (artifactId: string) => void; onCreate: (input: CreateServingApplicationInput) => void }) {
   const { t } = useI18n();
   const [form, setForm] = useState({
     projectId: '',
     clusterId: '',
     artifactId: '',
+    acceleratorPoolId: '',
     name: 'DeepSeek V4 Flash',
     namespace: '',
     endpointName: 'deepseek-v4-flash',
@@ -30,6 +31,7 @@ export function ServingAppCreateForm({ projects, clusters, artifacts, creationPl
       },
       placement: {
         clusterId: form.clusterId,
+        acceleratorPoolId: form.acceleratorPoolId || undefined,
         namespace: form.namespace || selectedPlan.defaults.namespace,
       },
       runtime: {
@@ -57,7 +59,9 @@ export function ServingAppCreateForm({ projects, clusters, artifacts, creationPl
   return (
     <form className="form" onSubmit={submit}>
       <SelectField label={t('project')} value={form.projectId} onChange={(value) => setForm({ ...form, projectId: value })} options={projects.map((project) => [project.id, project.name])} />
-      <SelectField label={t('cluster')} value={form.clusterId} onChange={(value) => setForm({ ...form, clusterId: value })} options={clusters.map((cluster) => [cluster.id, cluster.name])} />
+      <SelectField label={t('cluster')} value={form.clusterId} onChange={(value) => setForm({ ...form, clusterId: value, acceleratorPoolId: '' })} options={clusters.map((cluster) => [cluster.id, cluster.name])} />
+      <SelectField label={t('acceleratorPool')} value={form.acceleratorPoolId} onChange={(value) => setForm({ ...form, acceleratorPoolId: value })} options={poolSummaries.filter((summary) => summary.pool.clusterId === form.clusterId).map((summary) => [summary.pool.id, `${summary.pool.name}: ${summary.freshness}, ${summary.acceleratorCount} accelerators`])} required={false} />
+      <InventoryHints summaries={poolSummaries.filter((summary) => summary.pool.clusterId === form.clusterId)} />
       <SelectField label={t('artifact')} value={form.artifactId} onChange={setArtifactId} options={artifacts.map((artifact) => [artifact.id, `${artifact.family}/${artifact.variant}:${artifact.revision}`])} />
       <SelectField label={t('recipe')} value={selectedRecipe?.metadata.id || ''} onChange={(value) => setForm({ ...form, recipeId: value })} options={(creationPlans ?? []).map((plan) => [plan.recipe.metadata.id, `${plan.recipe.metadata.name} (${plan.recipe.spec.support.status})`])} />
       {selectedPlan ? <RecipeWarning plan={selectedPlan} /> : <p className="muted">No matching recipe for selected artifact.</p>}
@@ -93,11 +97,18 @@ function InputField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
+function InventoryHints({ summaries }: { summaries: AcceleratorPoolSummary[] }) {
+  if (summaries.length === 0) {
+    return <p className="muted">No Accelerator Pool inventory summary for selected cluster.</p>;
+  }
+  return <p className="muted">Inventory: {summaries.map((summary) => `${summary.pool.name} ${summary.freshness} ${summary.acceleratorCount} accelerators ${summary.warnings?.join(', ') ?? ''}`).join(' | ')}</p>;
+}
+
+function SelectField({ label, value, onChange, options, required = true }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]>; required?: boolean }) {
   return (
     <label className="field">
       <span className="label">{label}</span>
-      <select className="select" required value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className="select" required={required} value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">-</option>
         {options.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}
       </select>

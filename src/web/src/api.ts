@@ -172,6 +172,7 @@ export interface ServingApplication {
   activeVersion: number;
   endpointUrl?: string;
   grafanaUrl?: string;
+  validationInventoryRevision?: string;
   createdAt: string;
   updatedAt: string;
 }

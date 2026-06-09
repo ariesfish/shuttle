@@ -544,6 +544,101 @@ func (s *FileStore) ListServingApplicationCreationPlans(artifactID string) ([]Se
 	return s.recipes.CreationPlans(artifact), nil
 }
 
+func (s *FileStore) validateInventoryCompatibilityLocked(req CreateServingApplicationRequest) (string, error) {
+	inventory, ok := s.data.AcceleratorInventory[req.Placement.ClusterID]
+	if !ok {
+		if strings.TrimSpace(req.Placement.AcceleratorPoolID) == "" && !s.clusterReportsInventoryLocked(req.Placement.ClusterID) {
+			return "", nil
+		}
+		return "", fmt.Errorf("%w: accelerator inventory missing for cluster %s", ErrInvalidInput, req.Placement.ClusterID)
+	}
+	if isInventoryStale(s.now().UTC(), inventory.ReportedAt) {
+		return inventory.Revision, fmt.Errorf("%w: accelerator inventory stale for cluster %s revision %s", ErrInvalidInput, req.Placement.ClusterID, inventory.Revision)
+	}
+	if inventory.Freshness != AcceleratorInventoryFreshnessFresh {
+		return inventory.Revision, fmt.Errorf("%w: accelerator inventory is %s for cluster %s", ErrInvalidInput, inventory.Freshness, req.Placement.ClusterID)
+	}
+	nodes := inventory.Nodes
+	if strings.TrimSpace(req.Placement.AcceleratorPoolID) != "" {
+		pool, ok := s.data.AcceleratorPools[req.Placement.AcceleratorPoolID]
+		if !ok || pool.ClusterID != req.Placement.ClusterID {
+			return inventory.Revision, fmt.Errorf("%w: accelerator pool %s does not exist for cluster %s", ErrInvalidInput, req.Placement.AcceleratorPoolID, req.Placement.ClusterID)
+		}
+		filtered := make([]AcceleratorInventoryNode, 0, len(nodes))
+		for _, node := range nodes {
+			if nodeMatchesSelector(node, pool.NodeSelector) {
+				filtered = append(filtered, node)
+			}
+		}
+		nodes = filtered
+	}
+	if len(nodes) == 0 {
+		return inventory.Revision, fmt.Errorf("%w: accelerator inventory revision %s has no nodes matching placement", ErrInvalidInput, inventory.Revision)
+	}
+	if requiresLargeNVIDIA(req) {
+		if err := validateLargeNVIDIAInventory(req, inventory.Revision, nodes); err != nil {
+			return inventory.Revision, err
+		}
+	}
+	return inventory.Revision, nil
+}
+
+func (s *FileStore) clusterReportsInventoryLocked(clusterID string) bool {
+	for _, agent := range s.data.Agents {
+		if agent.ClusterID == clusterID && strings.TrimSpace(agent.LastInventoryFreshness) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func requiresLargeNVIDIA(req CreateServingApplicationRequest) bool {
+	return strings.EqualFold(req.Model.Family, "deepseek-v4") && strings.EqualFold(req.Model.Variant, "flash")
+}
+
+func validateLargeNVIDIAInventory(req CreateServingApplicationRequest, revision string, nodes []AcceleratorInventoryNode) error {
+	for _, node := range nodes {
+		gpuCount := 0
+		memoryMiB := 0
+		model := ""
+		for _, accelerator := range node.Accelerators {
+			if accelerator.Vendor != "nvidia" {
+				continue
+			}
+			gpuCount += accelerator.DeviceCount
+			if accelerator.MemoryMiB > memoryMiB {
+				memoryMiB = accelerator.MemoryMiB
+			}
+			if model == "" {
+				model = accelerator.Product
+			}
+		}
+		if gpuCount < 8 {
+			continue
+		}
+		if memoryMiB < 81920 {
+			return fmt.Errorf("%w: accelerator inventory revision %s node %s has insufficient NVIDIA memoryMiB=%d, need >=81920", ErrInvalidInput, revision, node.Name, memoryMiB)
+		}
+		if strings.EqualFold(req.Runtime.Topology, "pd-disagg") && !nodeHasConnectivity(node, "rdma") {
+			return fmt.Errorf("%w: accelerator inventory revision %s node %s missing RDMA connectivity for topology %s", ErrInvalidInput, revision, node.Name, req.Runtime.Topology)
+		}
+		if model == "" {
+			model = "unknown NVIDIA"
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: accelerator inventory revision %s has insufficient NVIDIA GPU count, need >=8 per node", ErrInvalidInput, revision)
+}
+
+func nodeHasConnectivity(node AcceleratorInventoryNode, kind string) bool {
+	for _, fact := range node.Connectivity {
+		if fact.Type == kind && fact.Present {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *FileStore) CreateServingApplication(req CreateServingApplicationRequest) (ServingApplication, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -568,22 +663,27 @@ func (s *FileStore) CreateServingApplication(req CreateServingApplicationRequest
 	if _, err := s.recipes.ValidateIntent(req, artifact); err != nil {
 		return ServingApplication{}, err
 	}
+	inventoryRevision, err := s.validateInventoryCompatibilityLocked(req)
+	if err != nil {
+		return ServingApplication{}, err
+	}
 
 	now := s.now().UTC()
 	app := ServingApplication{
-		ID:            s.nextID("app"),
-		ProjectID:     req.ProjectID,
-		Name:          name,
-		Model:         req.Model,
-		Placement:     req.Placement,
-		Runtime:       req.Runtime,
-		Service:       req.Service,
-		Optimization:  req.Optimization,
-		DesiredState:  "Active",
-		Phase:         ServingApplicationPhaseDraft,
-		ActiveVersion: 1,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:                          s.nextID("app"),
+		ProjectID:                   req.ProjectID,
+		Name:                        name,
+		Model:                       req.Model,
+		Placement:                   req.Placement,
+		Runtime:                     req.Runtime,
+		Service:                     req.Service,
+		Optimization:                req.Optimization,
+		DesiredState:                "Active",
+		Phase:                       ServingApplicationPhaseDraft,
+		ActiveVersion:               1,
+		ValidationInventoryRevision: inventoryRevision,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
 	}
 	s.data.ServingApplications[app.ID] = app
 	s.recordServingApplicationTransitionLocked(app.ID, "system", "", "", app.Phase, "created")

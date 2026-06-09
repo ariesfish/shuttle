@@ -82,7 +82,7 @@ func (c *ManagementCommands) CreateServingApplication(ctx context.Context, req C
 	}
 	app, err := c.store.CreateServingApplication(req)
 	if err == nil {
-		c.recordAudit(ctx, "create_serving_application", app.ID, map[string]any{"projectId": app.ProjectID, "name": app.Name})
+		c.recordAudit(ctx, "create_serving_application", app.ID, map[string]any{"projectId": app.ProjectID, "name": app.Name, "inventoryRevision": app.ValidationInventoryRevision})
 	}
 	return app, err
 }
