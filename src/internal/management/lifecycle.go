@@ -19,7 +19,11 @@ const (
 	ServingApplicationActionDiagnostics ServingApplicationAction = "diagnostics"
 )
 
-type ServingApplicationLifecycleRepository interface {
+// ServingApplicationRepository is the deep persistence seam for Serving
+// Application lifecycle behavior. Its Interface is intentionally narrower than
+// Store: lifecycle callers can request actions and accept completions without
+// knowing unrelated Management Plane persistence details.
+type ServingApplicationRepository interface {
 	LoadActionState(appID string) (ServingApplicationActionState, error)
 	SaveRequestedAction(ServingApplicationRequestedAction) (Task, error)
 	LoadCompletionState(taskID string) (ServingApplicationCompletionState, error)
@@ -69,17 +73,17 @@ func (RecipeTemplateRenderer) Render(recipe ServingRecipe, app ServingApplicatio
 // rendering, task contract details, phase transitions, and Endpoint Registry
 // updates behind two high-leverage entry points.
 type ServingApplicationLifecycle struct {
-	repo     ServingApplicationLifecycleRepository
+	repo     ServingApplicationRepository
 	renderer DeploymentRenderer
 	tasks    platformtask.Registry
 	now      func() time.Time
 }
 
-func NewServingApplicationLifecycle(repo ServingApplicationLifecycleRepository) *ServingApplicationLifecycle {
+func NewServingApplicationLifecycle(repo ServingApplicationRepository) *ServingApplicationLifecycle {
 	return NewServingApplicationLifecycleWithOptions(repo, RecipeTemplateRenderer{}, platformtask.DefaultRegistry())
 }
 
-func NewServingApplicationLifecycleWithOptions(repo ServingApplicationLifecycleRepository, renderer DeploymentRenderer, tasks platformtask.Registry) *ServingApplicationLifecycle {
+func NewServingApplicationLifecycleWithOptions(repo ServingApplicationRepository, renderer DeploymentRenderer, tasks platformtask.Registry) *ServingApplicationLifecycle {
 	if renderer == nil {
 		renderer = RecipeTemplateRenderer{}
 	}

@@ -26,6 +26,27 @@ func TestLoadRecipeRegistry(t *testing.T) {
 	}
 }
 
+func TestRecipeRegistryCreationPlansApplyDefaultsAndSupport(t *testing.T) {
+	registry, err := LoadRecipeRegistry("config/recipes", "")
+	if err != nil {
+		t.Fatalf("load recipes: %v", err)
+	}
+	artifact := ModelArtifact{ID: "artifact-1", Family: "deepseek-v4", Variant: "flash", Quantization: "fp8"}
+
+	plans := registry.CreationPlans(artifact)
+	if len(plans) != 2 {
+		t.Fatalf("expected matching plans, got %+v", plans)
+	}
+	vllm := findCreationPlan(plans, "deepseek-v4-flash-vllm-dgd-disagg")
+	if vllm == nil || vllm.Model.ArtifactID != artifact.ID || vllm.Runtime.Backend != "vllm" || vllm.Defaults.Namespace != "dynamo-system" || vllm.Defaults.Protocol != "openai-compatible" || !vllm.Creatable || vllm.Message == "" {
+		t.Fatalf("unexpected vllm plan: %+v", vllm)
+	}
+	missing := registry.CreationPlans(ModelArtifact{ID: "artifact-2", Family: "deepseek-v4", Variant: "flash", Quantization: "int4"})
+	if len(missing) != 0 {
+		t.Fatalf("expected no plans for unsupported artifact, got %+v", missing)
+	}
+}
+
 func TestRecipeRegistryValidateIntent(t *testing.T) {
 	registry, err := LoadRecipeRegistry("config/recipes", "")
 	if err != nil {
@@ -68,6 +89,16 @@ func TestRecipeRegistryRejectsInvalidIntent(t *testing.T) {
 	if _, err := registry.ValidateIntent(request, artifact); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected quantization mismatch to be invalid input, got %v", err)
 	}
+}
+
+func findCreationPlan(plans []ServingApplicationCreationPlan, recipeID string) *ServingApplicationCreationPlan {
+	for _, plan := range plans {
+		if plan.Recipe.Metadata.ID == recipeID {
+			copy := plan
+			return &copy
+		}
+	}
+	return nil
 }
 
 func TestRecipeRegistryConfigMapOverride(t *testing.T) {

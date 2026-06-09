@@ -73,6 +73,32 @@ type ServingRecipeDefaults struct {
 	ProfilingMode      string `json:"profilingMode,omitempty" yaml:"profilingMode"`
 }
 
+const (
+	defaultServingApplicationNamespace          = "dynamo-system"
+	defaultServingApplicationProtocol           = "openai-compatible"
+	defaultServingApplicationExposure           = "cluster-local"
+	defaultServingApplicationOptimizationTarget = "throughput"
+	defaultServingApplicationProfilingMode      = "disabled"
+)
+
+type ServingApplicationCreationPlan struct {
+	ArtifactID string                                 `json:"artifactId"`
+	Recipe     ServingRecipe                          `json:"recipe"`
+	Model      ModelIntent                            `json:"model"`
+	Runtime    RuntimeIntent                          `json:"runtime"`
+	Defaults   ServingApplicationCreationPlanDefaults `json:"defaults"`
+	Creatable  bool                                   `json:"creatable"`
+	Message    string                                 `json:"message,omitempty"`
+}
+
+type ServingApplicationCreationPlanDefaults struct {
+	Namespace          string `json:"namespace"`
+	Protocol           string `json:"protocol"`
+	Exposure           string `json:"exposure"`
+	OptimizationTarget string `json:"optimizationTarget"`
+	ProfilingMode      string `json:"profilingMode"`
+}
+
 type RecipeRegistry struct {
 	recipes map[string]ServingRecipe
 }
@@ -116,6 +142,48 @@ func (r *RecipeRegistry) Get(id string) (ServingRecipe, bool) {
 	}
 	recipe, ok := r.recipes[strings.TrimSpace(id)]
 	return recipe, ok
+}
+
+func (r *RecipeRegistry) CreationPlans(artifact ModelArtifact) []ServingApplicationCreationPlan {
+	plans := make([]ServingApplicationCreationPlan, 0)
+	for _, recipe := range r.List() {
+		if !recipeMatchesArtifact(recipe, artifact) {
+			continue
+		}
+		plans = append(plans, NewServingApplicationCreationPlan(recipe, artifact))
+	}
+	return plans
+}
+
+func NewServingApplicationCreationPlan(recipe ServingRecipe, artifact ModelArtifact) ServingApplicationCreationPlan {
+	plan := ServingApplicationCreationPlan{
+		ArtifactID: artifact.ID,
+		Recipe:     recipe,
+		Model:      ModelIntent{Family: artifact.Family, Variant: artifact.Variant, ArtifactID: artifact.ID, Quantization: artifact.Quantization},
+		Runtime:    RuntimeIntent{Backend: recipe.Spec.Runtime.Backend, Topology: recipe.Spec.Runtime.Topology, Recipe: recipe.Metadata.ID},
+		Defaults:   recipeCreationDefaults(recipe),
+		Creatable:  recipe.Spec.Support.Status != RecipeSupportStatusBlocked,
+		Message:    recipeSupportMessage(recipe),
+	}
+	return plan
+}
+
+func recipeCreationDefaults(recipe ServingRecipe) ServingApplicationCreationPlanDefaults {
+	return ServingApplicationCreationPlanDefaults{
+		Namespace:          defaultString(recipe.Spec.Defaults.Namespace, defaultServingApplicationNamespace),
+		Protocol:           defaultString(recipe.Spec.Defaults.Protocol, defaultServingApplicationProtocol),
+		Exposure:           defaultString(recipe.Spec.Defaults.Exposure, defaultServingApplicationExposure),
+		OptimizationTarget: defaultString(recipe.Spec.Defaults.OptimizationTarget, defaultServingApplicationOptimizationTarget),
+		ProfilingMode:      defaultString(recipe.Spec.Defaults.ProfilingMode, defaultServingApplicationProfilingMode),
+	}
+}
+
+func recipeSupportMessage(recipe ServingRecipe) string {
+	message := strings.TrimSpace(recipe.Spec.Support.Warning)
+	if message == "" {
+		message = strings.TrimSpace(recipe.Spec.Support.Reason)
+	}
+	return message
 }
 
 func (r *RecipeRegistry) ValidateIntent(req CreateServingApplicationRequest, artifact ModelArtifact) (ServingRecipe, error) {
@@ -205,14 +273,26 @@ func validateRecipe(recipe ServingRecipe) error {
 }
 
 func recipeMatchesIntent(recipe ServingRecipe, req CreateServingApplicationRequest, artifact ModelArtifact) bool {
-	return recipe.Spec.Model.Family == req.Model.Family &&
-		recipe.Spec.Model.Family == artifact.Family &&
+	return recipeMatchesArtifact(recipe, artifact) &&
+		recipe.Spec.Model.Family == req.Model.Family &&
 		containsString(recipe.Spec.Model.Variants, req.Model.Variant) &&
-		containsString(recipe.Spec.Model.Variants, artifact.Variant) &&
 		containsString(recipe.Spec.Model.Quantizations, req.Model.Quantization) &&
-		containsString(recipe.Spec.Model.Quantizations, artifact.Quantization) &&
 		recipe.Spec.Runtime.Backend == req.Runtime.Backend &&
 		recipe.Spec.Runtime.Topology == req.Runtime.Topology
+}
+
+func recipeMatchesArtifact(recipe ServingRecipe, artifact ModelArtifact) bool {
+	return recipe.Spec.Model.Family == artifact.Family &&
+		containsString(recipe.Spec.Model.Variants, artifact.Variant) &&
+		containsString(recipe.Spec.Model.Quantizations, artifact.Quantization)
+}
+
+func defaultString(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func containsString(values []string, target string) bool {

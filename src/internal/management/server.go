@@ -10,28 +10,28 @@ import (
 )
 
 type Server struct {
-	store            Store
-	commands         *ManagementCommands
-	logger           *slog.Logger
-	leaseTTL         time.Duration
-	authConfig       AuthConfig
-	corsConfig       CORSConfig
-	prometheusClient PrometheusClient
+	store         ManagementStore
+	commands      *ManagementCommands
+	logger        *slog.Logger
+	leaseTTL      time.Duration
+	authConfig    AuthConfig
+	corsConfig    CORSConfig
+	observability *ServingApplicationObservability
 }
 
-func NewServer(store Store, logger *slog.Logger) *Server {
+func NewServer(store ManagementStore, logger *slog.Logger) *Server {
 	return NewServerWithAuth(store, logger, AuthConfig{})
 }
 
-func NewServerWithAuth(store Store, logger *slog.Logger, authConfig AuthConfig) *Server {
+func NewServerWithAuth(store ManagementStore, logger *slog.Logger, authConfig AuthConfig) *Server {
 	return NewServerWithOptions(store, logger, authConfig, CORSConfig{})
 }
 
-func NewServerWithOptions(store Store, logger *slog.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
+func NewServerWithOptions(store ManagementStore, logger *slog.Logger, authConfig AuthConfig, corsConfig CORSConfig) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{store: store, commands: NewManagementCommands(store, logger), logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig, corsConfig: corsConfig, prometheusClient: HTTPPrometheusClient{}}
+	return &Server{store: store, commands: NewManagementCommands(store, logger), logger: logger, leaseTTL: 30 * time.Second, authConfig: authConfig, corsConfig: corsConfig, observability: NewServingApplicationObservability(store, nil)}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -47,6 +47,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/model-artifacts", s.createModelArtifact)
 	mux.HandleFunc("GET /v1/model-artifacts", s.listModelArtifacts)
 	mux.HandleFunc("GET /v1/recipes", s.listRecipes)
+	mux.HandleFunc("GET /v1/model-artifacts/{artifactID}/serving-application-plans", s.listServingApplicationCreationPlans)
 	mux.HandleFunc("POST /v1/serving-applications", s.createServingApplication)
 	mux.HandleFunc("GET /v1/serving-applications", s.listServingApplications)
 	mux.HandleFunc("POST /v1/serving-applications/{appID}/preview-task", s.createPreviewTask)
@@ -141,6 +142,11 @@ func (s *Server) listRecipes(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, recipes, http.StatusOK, err)
 }
 
+func (s *Server) listServingApplicationCreationPlans(w http.ResponseWriter, r *http.Request) {
+	plans, err := s.store.ListServingApplicationCreationPlans(r.PathValue("artifactID"))
+	writeResult(w, plans, http.StatusOK, err)
+}
+
 func (s *Server) createServingApplication(w http.ResponseWriter, r *http.Request) {
 	var req CreateServingApplicationRequest
 	if !decodeJSON(w, r, &req) {
@@ -191,30 +197,8 @@ func (s *Server) getObservabilityEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getObservabilitySummary(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.store.GetObservabilityEntry(r.PathValue("appID"))
-	if err != nil {
-		writeResult(w, ObservabilitySummary{}, http.StatusOK, err)
-		return
-	}
-	now := time.Now().UTC()
-	summary := ObservabilitySummary{
-		ServingApplicationID: entry.ServingApplicationID,
-		ClusterID:            entry.ClusterID,
-		Namespace:            entry.Namespace,
-		PrometheusURL:        entry.PrometheusURL,
-		Results:              make([]PrometheusQueryResult, 0, len(entry.PrometheusQueries)),
-	}
-	for _, query := range entry.PrometheusQueries {
-		result := PrometheusQueryResult{Name: query.Name, Description: query.Description, Query: query.Query, FetchedAt: now}
-		value, err := s.prometheusClient.Query(r.Context(), entry.PrometheusURL, query.Query)
-		if err != nil {
-			result.Error = err.Error()
-		} else {
-			result.Value = value
-		}
-		summary.Results = append(summary.Results, result)
-	}
-	writeJSON(w, http.StatusOK, summary)
+	summary, err := s.observability.Summary(r.Context(), r.PathValue("appID"))
+	writeResult(w, summary, http.StatusOK, err)
 }
 
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {

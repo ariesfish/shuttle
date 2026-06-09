@@ -489,6 +489,29 @@ func forceLeaseTask(store *FileStore, clusterID, taskID, agentID string) (Task, 
 	return task, nil
 }
 
+func TestListServingApplicationCreationPlansUsesArtifact(t *testing.T) {
+	store, err := NewFileStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := store.CreateModelArtifact(CreateModelArtifactRequest{Family: "deepseek-v4", Variant: "flash", Revision: "rev1", PVCMountPath: "/models", PVCModelPath: "snapshot", Quantization: "fp8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plans, err := store.ListServingApplicationCreationPlans(artifact.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 2 || plans[0].Model.ArtifactID != artifact.ID {
+		t.Fatalf("unexpected plans: %+v", plans)
+	}
+	_, err = store.ListServingApplicationCreationPlans("missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected missing artifact to be not found, got %v", err)
+	}
+}
+
 func TestTaskTypeWhitelist(t *testing.T) {
 	store, err := NewFileStore("")
 	if err != nil {

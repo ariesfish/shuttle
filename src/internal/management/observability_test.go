@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,14 +14,45 @@ import (
 type fakePrometheusClient struct {
 	queries []string
 	values  map[string]string
+	errors  map[string]error
 }
 
 func (c *fakePrometheusClient) Query(_ context.Context, _ string, query string) (string, error) {
 	c.queries = append(c.queries, query)
+	if err, ok := c.errors[query]; ok {
+		return "", err
+	}
 	if value, ok := c.values[query]; ok {
 		return value, nil
 	}
 	return "0", nil
+}
+
+type fakeObservabilityStore struct {
+	entry ObservabilityEntry
+	err   error
+}
+
+func (s *fakeObservabilityStore) GetObservabilityEntry(string) (ObservabilityEntry, error) {
+	if s.err != nil {
+		return ObservabilityEntry{}, s.err
+	}
+	return s.entry, nil
+}
+
+func TestServingApplicationObservabilityRecordsPartialQueryFailures(t *testing.T) {
+	queryA := PrometheusQuery{Name: "ok", Description: "successful query", Query: "up"}
+	queryB := PrometheusQuery{Name: "fail", Description: "failed query", Query: "down"}
+	fake := &fakePrometheusClient{values: map[string]string{"up": "1"}, errors: map[string]error{"down": errors.New("prometheus unavailable")}}
+	observability := NewServingApplicationObservability(&fakeObservabilityStore{entry: ObservabilityEntry{ServingApplicationID: "app-1", ClusterID: "cluster-1", Namespace: "tenant-a", PrometheusURL: "http://prometheus.example", PrometheusQueries: []PrometheusQuery{queryA, queryB}}}, fake)
+
+	summary, err := observability.Summary(context.Background(), "app-1")
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Results) != 2 || summary.Results[0].Value != "1" || summary.Results[1].Error != "prometheus unavailable" {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
 }
 
 func TestGetObservabilitySummaryQueriesPrometheus(t *testing.T) {
@@ -54,7 +86,7 @@ func TestGetObservabilitySummaryQueriesPrometheus(t *testing.T) {
 	}
 	fake := &fakePrometheusClient{values: map[string]string{}}
 	server := NewServer(store, slog.Default())
-	server.prometheusClient = fake
+	server.observability = NewServingApplicationObservability(store, fake)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/serving-applications/"+app.ID+"/observability/summary", nil)
 	server.Routes().ServeHTTP(recorder, request)

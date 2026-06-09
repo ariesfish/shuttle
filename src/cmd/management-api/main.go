@@ -23,7 +23,7 @@ func main() {
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	var store management.Store
+	var store management.ManagementStore
 	var err error
 	if *postgresDSN != "" {
 		store, err = management.NewPostgresJSONStateStore(context.Background(), management.PostgresJSONStateOptions{DSN: *postgresDSN})

@@ -9,12 +9,12 @@ import (
 var ErrForbidden = errors.New("forbidden")
 
 type ManagementCommands struct {
-	store     Store
+	store     ManagementStore
 	lifecycle *ServingApplicationLifecycle
 	logger    *slog.Logger
 }
 
-func NewManagementCommands(store Store, logger *slog.Logger) *ManagementCommands {
+func NewManagementCommands(store ManagementStore, logger *slog.Logger) *ManagementCommands {
 	if logger == nil {
 		logger = slog.Default()
 	}
