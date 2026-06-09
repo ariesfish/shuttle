@@ -24,6 +24,7 @@ func main() {
 	executorMode := flag.String("executor-mode", envOrDefault("AGENT_EXECUTOR_MODE", "kubectl"), "Task executor mode: kubectl or fake")
 	pollInterval := flag.Duration("poll-interval", durationEnvOrDefault("AGENT_POLL_INTERVAL", 5*time.Second), "Task polling interval")
 	heartbeatInterval := flag.Duration("heartbeat-interval", durationEnvOrDefault("AGENT_HEARTBEAT_INTERVAL", 30*time.Second), "Heartbeat interval")
+	inventoryTimeout := flag.Duration("inventory-timeout", durationEnvOrDefault("AGENT_INVENTORY_TIMEOUT", 10*time.Second), "Read-only Kubernetes node inventory timeout")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -45,7 +46,7 @@ func main() {
 	if strings.EqualFold(*executorMode, "fake") {
 		runner = agent.NewRunnerWithInventory(client, config, logger, agent.FakeKubernetesExecutor{}, agent.FakeInventoryReporter{})
 	} else {
-		runner = agent.NewRunner(client, config, logger)
+		runner = agent.NewRunnerWithInventory(client, config, logger, nil, agent.KubectlNodeInventoryReporter{Timeout: *inventoryTimeout})
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -30,6 +30,7 @@ data:
   executor-mode: "kubectl"
   poll-interval: "5s"
   heartbeat-interval: "30s"
+  inventory-timeout: "10s"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -43,6 +44,10 @@ rules:
       - dynamocomponentdeployments
       - dynamomodels
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - nodes
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources:
       - pods
@@ -100,6 +105,7 @@ spec:
             - "-executor-mode=$(EXECUTOR_MODE)"
             - "-poll-interval=$(POLL_INTERVAL)"
             - "-heartbeat-interval=$(HEARTBEAT_INTERVAL)"
+            - "-inventory-timeout=$(INVENTORY_TIMEOUT)"
           env:
             - name: MANAGEMENT_URL
               valueFrom:
@@ -131,6 +137,11 @@ spec:
                 configMapKeyRef:
                   name: cluster-agent-config
                   key: heartbeat-interval
+            - name: INVENTORY_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: cluster-agent-config
+                  key: inventory-timeout
             - name: AUTH_TOKEN
               valueFrom:
                 secretKeyRef:

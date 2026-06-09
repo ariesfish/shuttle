@@ -16,7 +16,7 @@ Inference Cluster
         -> local kube-apiserver via in-cluster ServiceAccount token
 ```
 
-The Management Plane does not store a broad kubeconfig for the Inference Cluster. The Cluster Agent uses its local ServiceAccount and RBAC to apply and inspect platform-owned Dynamo resources.
+The Management Plane does not store a broad kubeconfig for the Inference Cluster. The Cluster Agent uses its local ServiceAccount and RBAC to apply and inspect platform-owned Dynamo resources, and to collect read-only Kubernetes node facts for Accelerator Inventory.
 
 ## Registration Flow
 
@@ -80,6 +80,7 @@ data:
   cluster-id: "cluster-..."
   capabilities: "dynamo=true,backend=vllm"
   executor-mode: "kubectl"
+  inventory-timeout: "10s"
 ```
 
 Set the Secret value:
@@ -106,12 +107,14 @@ data:
   executor-mode: "fake"
 ```
 
-Fake mode simulates preview, apply, redeploy, and retire task success. Do not use fake mode in real Inference Clusters.
+Fake mode simulates preview, apply, redeploy, and retire task success and reports synthetic Accelerator Inventory. Do not use fake mode in real Inference Clusters.
 
 ## RBAC Scope
 
 The first manifest grants access to:
 
+- Cluster-scoped read-only node inventory:
+  - `nodes` with `get`, `list`, and `watch` so the Agent can report node names, labels, taints, capacity, allocatable resources, and accelerator resource names.
 - Dynamo CRDs under `nvidia.com`:
   - `dynamographdeployments`
   - `dynamographdeploymentrequests`
@@ -124,6 +127,8 @@ The first manifest grants access to:
 - Apps resources used by operator-managed workloads:
   - `deployments`
   - `replicasets`
+
+The node inventory permission is read-only and does not allow secret reads, environment inspection, arbitrary kubectl execution, or workload mutation. If this permission is missing or the kube-apiserver request times out, the Agent reports a bounded `kubernetes-nodes=warning` probe status while preserving any other inventory data it can report.
 
 This is intentionally not a general-purpose cluster-admin role. Tighten the scope further once the exact managed namespaces and resource labels are stable.
 

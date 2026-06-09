@@ -29,9 +29,10 @@ go run ./cmd/cluster-agent \
   -management-url http://localhost:8080 \
   -cluster-id cluster-2 \
   -auth-token dev-secret \
+  -inventory-timeout 10s \
   -capability dynamo=true,backend=vllm
 
-# For local UI smoke without kubectl or Dynamo CRDs:
+# For local UI smoke without kubectl, Kubernetes nodes, or Dynamo CRDs:
 go run ./cmd/cluster-agent \
   -management-url http://localhost:8080 \
   -cluster-id cluster-2 \
@@ -68,7 +69,7 @@ curl -s localhost:8080/v1/clusters/cluster-2/tasks:lease \
   -d '{"agentId":"agent-3"}'
 ```
 
-If the Cluster Agent is running, it will lease and complete pending tasks in no-op mode.
+If the Cluster Agent is running in default kubectl mode, it reports read-only Kubernetes node inventory from `kubectl get nodes -o json` and then leases tasks. If fake mode is enabled, it reports synthetic Accelerator Inventory and completes pending tasks without kube-apiserver access.
 
 Register a cached model artifact and create a Serving Application:
 

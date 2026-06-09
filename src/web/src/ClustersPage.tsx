@@ -125,6 +125,8 @@ function ClusterRow({ cluster, agent, inventory }: { cluster: InferenceCluster; 
       <td>
         <span className={`badge ${inventory?.freshness === 'fresh' ? '' : 'muted'}`}>{inventory?.freshness || agent?.lastInventoryFreshness || t('missing')}</span>
         <div className="muted">{t('nodeCount')}: {inventory?.nodes?.length ?? 0}</div>
+        <div className="muted">{t('nodeNames')}: {formatNodeNames(inventory)}</div>
+        <div className="muted">{t('acceleratorResources')}: {formatAcceleratorResources(inventory)}</div>
         <div className="muted">{t('observedAt')}: {formatDate(inventory?.observedAt || agent?.lastInventoryObservedAt, t('never'))}</div>
         <div className="muted">{t('probeStatus')}: {formatProbeStatuses(inventory?.probeStatuses)}</div>
       </td>
@@ -146,6 +148,21 @@ function formatCapabilities(capabilities?: Record<string, string>) {
     return '-';
   }
   return Object.entries(capabilities).map(([key, value]) => `${key}=${value}`).join(', ');
+}
+
+function formatNodeNames(inventory?: AcceleratorInventory) {
+  const names = inventory?.nodes?.map((node) => node.name).filter(Boolean) ?? [];
+  return names.length ? names.join(', ') : '-';
+}
+
+function formatAcceleratorResources(inventory?: AcceleratorInventory) {
+  const resources = new Set<string>();
+  for (const node of inventory?.nodes ?? []) {
+    for (const resource of node.acceleratorResourceNames ?? []) {
+      resources.add(resource);
+    }
+  }
+  return resources.size ? Array.from(resources).sort().join(', ') : '-';
 }
 
 function formatProbeStatuses(probes?: Array<{ name: string; status: string; message?: string }>) {

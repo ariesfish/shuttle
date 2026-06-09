@@ -757,6 +757,7 @@ func cloneInventoryNodes(input []AcceleratorInventoryNode) []AcceleratorInventor
 		node.Taints = append([]string(nil), node.Taints...)
 		node.Capacity = cloneStringMap(node.Capacity)
 		node.Allocatable = cloneStringMap(node.Allocatable)
+		node.AcceleratorResourceNames = append([]string(nil), node.AcceleratorResourceNames...)
 		node.Accelerators = accelerators
 		output = append(output, node)
 	}

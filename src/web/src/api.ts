@@ -41,6 +41,7 @@ export interface AcceleratorInventoryNode {
   taints?: string[];
   capacity?: Record<string, string>;
   allocatable?: Record<string, string>;
+  acceleratorResourceNames?: string[];
   accelerators?: AcceleratorInventoryAccelerator[];
   observedAt?: string;
 }
