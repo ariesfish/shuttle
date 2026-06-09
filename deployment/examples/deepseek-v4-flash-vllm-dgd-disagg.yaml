@@ -104,6 +104,7 @@ spec:
                     --model /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136 \
                     --served-model-name deepseek-ai/DeepSeek-V4-Flash \
                     --disaggregation-mode decode \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
                     --trust-remote-code \
                     --kv-cache-dtype fp8 \
                     --block-size 256 \
@@ -232,6 +233,7 @@ spec:
                     --model /home/dynamo/.cache/huggingface/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/6976c7ff1b30a1b2cb7805021b8ba4684041f136 \
                     --served-model-name deepseek-ai/DeepSeek-V4-Flash \
                     --disaggregation-mode prefill \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
                     --trust-remote-code \
                     --kv-cache-dtype fp8 \
                     --block-size 256 \
