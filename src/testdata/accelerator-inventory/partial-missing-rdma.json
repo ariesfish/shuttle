@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "accelerator-inventory/v1alpha1",
+  "observedAt": "2026-06-09T10:00:00Z",
+  "nodes": [
+    {
+      "name": "h100-node-partial",
+      "labels": {
+        "pool": "partial",
+        "nvidia.com/gpu.product": "NVIDIA-H100-SXM",
+        "nvidia.com/gpu.memory": "81920"
+      },
+      "capacity": { "nvidia.com/gpu": "8" },
+      "allocatable": { "nvidia.com/gpu": "8" },
+      "acceleratorResourceNames": ["nvidia.com/gpu"],
+      "accelerators": [
+        { "vendor": "nvidia", "product": "NVIDIA H100 SXM", "deviceCount": 8, "memoryMiB": 81920 }
+      ],
+      "connectivity": [
+        { "type": "nvlink", "present": false, "confidence": "unobserved", "summary": "nvlink not observed" },
+        { "type": "rdma", "present": false, "confidence": "unobserved", "summary": "rdma not observed" }
+      ],
+      "observedAt": "2026-06-09T10:00:00Z"
+    }
+  ],
+  "probeStatuses": [
+    { "name": "kubernetes-nodes", "status": "ok", "message": "fixture node inventory" },
+    { "name": "nvidia-dcgm", "status": "warning", "message": "dcgm exporter not observed" },
+    { "name": "connectivity", "status": "warning", "message": "connectivity facts incomplete: nvlink,rdma" }
+  ],
+  "collectionMetadata": { "mode": "fixture" }
+}

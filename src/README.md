@@ -43,6 +43,18 @@ go run ./cmd/cluster-agent \
 
 In fake executor mode, the Cluster Agent also reports a synthetic Accelerator Inventory snapshot for local Phase 2 UI/API smoke testing. Kubectl/NVIDIA/RDMA discovery is intentionally not used in this mode.
 
+## Phase 2 Accelerator Inventory Smoke
+
+Run the complete local Phase 2 vertical workflow without live GPU hardware:
+
+```bash
+./scripts/smoke-phase-2-accelerator-inventory.sh
+```
+
+The script starts the Management API, registers a fixture-backed Cluster Agent record, reports representative H200 Accelerator Inventory, creates an Accelerator Pool, validates compatible and incompatible Serving Application paths, creates a Tuning Record, and reads production observability entry points. It uses fixtures in `src/testdata/accelerator-inventory/` and does not require real Kubernetes, NVIDIA devices, DCGM, NVLink, or RDMA visibility.
+
+For real Inference Clusters, run the Cluster Agent in default `kubectl` mode. Real node inventory requires read-only node RBAC. NVIDIA/DCGM/NVLink/RDMA facts depend on labels, telemetry components, and connectivity signals visible inside the target cluster.
+
 ## Smoke Test
 
 ```bash

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "accelerator-inventory/v1alpha1",
+  "observedAt": "2026-06-09T10:00:00Z",
+  "nodes": [
+    {
+      "name": "h200-node-1",
+      "labels": {
+        "pool": "h200",
+        "nvidia.com/gpu.product": "NVIDIA-H200-SXM",
+        "nvidia.com/gpu.memory": "143360",
+        "nvidia.com/nvlink.present": "true",
+        "rdma/ib": "true"
+      },
+      "capacity": { "nvidia.com/gpu": "8" },
+      "allocatable": { "nvidia.com/gpu": "8" },
+      "acceleratorResourceNames": ["nvidia.com/gpu"],
+      "accelerators": [
+        { "vendor": "nvidia", "product": "NVIDIA H200 SXM", "deviceCount": 8, "memoryMiB": 143360 }
+      ],
+      "connectivity": [
+        { "type": "nvlink", "present": true, "confidence": "observed", "summary": "nvidia.com/nvlink.present=true" },
+        { "type": "rdma", "present": true, "confidence": "observed", "summary": "rdma/ib=true" }
+      ],
+      "observedAt": "2026-06-09T10:00:00Z"
+    }
+  ],
+  "probeStatuses": [
+    { "name": "kubernetes-nodes", "status": "ok", "message": "fixture node inventory" },
+    { "name": "nvidia-dcgm", "status": "ok", "message": "fixture dcgm telemetry" },
+    { "name": "connectivity", "status": "ok", "message": "nvlink and rdma observed" }
+  ],
+  "collectionMetadata": { "mode": "fixture" }
+}
