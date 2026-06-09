@@ -40,6 +40,10 @@ _Avoid_: User template, deployment preset, topology
 A schedulable group of accelerator resources with shared operational characteristics.
 _Avoid_: GPU pool, node group
 
+**Accelerator Inventory**:
+The observed hardware and connectivity facts for accelerator nodes in an Inference Cluster.
+_Avoid_: GPU node info, hardware config
+
 **Optimization Profile**:
 A record of performance targets, profiling results, and tuning observations for a Serving Application.
 _Avoid_: Benchmark result, planner config
@@ -53,6 +57,8 @@ _Avoid_: Benchmark result, planner config
 - A **Serving Application** runs on exactly one **Inference Cluster** at a time.
 - A **Serving Application** serves one **Model Artifact** using one **Serving Topology**.
 - A **Serving Application** is created from one **Serving Recipe**.
+- An **Inference Cluster** reports one **Accelerator Inventory** through its **Cluster Agent**.
+- An **Accelerator Inventory** describes the observed capacity behind one or more **Accelerator Pools**.
 - A **Serving Application** consumes capacity from one or more **Accelerator Pools**.
 - A **Serving Application** may accumulate many **Optimization Profiles** over its lifetime.
 
@@ -66,4 +72,5 @@ _Avoid_: Benchmark result, planner config
 - "管理后台" was used to mean both **Management Plane** and an in-cluster service — resolved: these are distinct concepts.
 - "模型" may mean a catalog entry or a concrete checkpoint — resolved: deployable checkpoints are **Model Artifacts**.
 - "GPU 集群" is too NVIDIA-specific for the target domain — resolved: use **Inference Cluster** and **Accelerator Pool** for vendor-neutral language.
+- "GPU 节点信息" is an implementation-shaped phrase — resolved: use **Accelerator Inventory** for observed accelerator hardware and connectivity facts.
 - "namespace" may refer to Kubernetes placement or product ownership — resolved: use **Project** for the product boundary and Kubernetes namespace only as a cluster-side mapping.

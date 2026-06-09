@@ -507,16 +507,17 @@ Exit criteria:
 
 ### Phase 2: Production Observability and Tuning
 
-Goal: Support fleet-level operations, tuning history, and cross-cluster monitoring.
+Goal: Support fleet-level operations, accelerator-aware tuning, and cross-cluster monitoring.
 
 Deliverables:
 
+- Accelerator Inventory reported by the Cluster Agent for node-level accelerator facts, starting with NVIDIA GPU model, memory size, GPU count, NVLink presence, InfiniBand/RDMA capability, driver/CUDA/DCGM health, and relevant node labels and taints.
 - Global metrics layer using Thanos, VictoriaMetrics, or Mimir.
-- Global Grafana dashboards for fleet, cluster, model, and deployment views.
+- Global Grafana dashboards for fleet, cluster, model, deployment, and accelerator inventory views.
 - Log aggregation through Loki, OpenSearch, or ClickHouse.
-- Tuning Records for profiling, benchmark summaries, Planner settings, and recommendations.
+- Tuning Records for profiling, benchmark summaries, Planner settings, hardware context, and recommendations.
 - Alert aggregation and incident entry points.
-- Compatibility matrix for model, backend, accelerator pool, quantization, and topology.
+- Compatibility matrix for model, backend, accelerator pool, quantization, topology, and observed accelerator inventory.
 
 ### Phase 3: Global Inference Gateway
 
@@ -536,8 +537,8 @@ Goal: Make heterogeneous accelerators and model/runtime compatibility operationa
 
 Deliverables:
 
-- Accelerator Pool capability discovery and lifecycle management.
-- Vendor-neutral resource and runtime capability schema.
+- Accelerator Pool lifecycle management based on the observed inventory and operator-defined schedulable boundaries.
+- Vendor-neutral resource and runtime capability schema beyond the Phase 2 NVIDIA-first inventory.
 - Automated placement recommendations based on model artifact, SLA, cost, and hardware availability.
 - Multi-backend support beyond SGLang/vLLM when needed.
 - Policy-driven rollout and rollback for scarce accelerator clusters.
@@ -548,8 +549,9 @@ Deliverables:
 2. Add production identity provider integration and fine-grained Project RBAC.
 3. Add exact resource-name fallback cleanup when label-based delete-before-apply cleanup is insufficient.
 4. Add optional Prometheus query execution for selected summary metrics.
-5. Expand the minimal Web Console beyond Clusters to Projects, Model Artifacts, Serving Applications, Tasks, and Audit.
-6. Replace generated service DNS defaults with discovered external cluster-local endpoint URLs when ingress/gateway details are available.
+5. Define the Phase 2 Accelerator Inventory API and Cluster Agent discovery contract.
+6. Expand the minimal Web Console beyond Clusters to Projects, Model Artifacts, Serving Applications, Tasks, and Audit.
+7. Replace generated service DNS defaults with discovered external cluster-local endpoint URLs when ingress/gateway details are available.
 
 ## Out of Scope for Phase 1
 
