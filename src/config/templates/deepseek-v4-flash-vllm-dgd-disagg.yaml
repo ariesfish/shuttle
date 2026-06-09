@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: inference-platform
     app.kubernetes.io/part-of: inference-platform
-    inference.zhiliu.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
-  name: deepseek-v4-flash-vllm-pd-disaggregated
-  namespace: tenant-a
+    inference.zhiliu.dev/serving-application: {{ .ResourceName }}
+  name: {{ .ResourceName }}
+  namespace: {{ .Namespace }}
 spec:
   backendFramework: vllm
   components:
@@ -18,12 +18,12 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.zhiliu.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
         spec:
           volumes:
             - name: model-cache
               hostPath:
-                path: "/data/models/hub"
+                path: "{{ .HostCachePath }}"
                 type: Directory
             - name: torchinductor-cache
               hostPath:
@@ -44,9 +44,9 @@ spec:
                 - dynamo.frontend
               args:
                 - "--model-name"
-                - deepseek-ai/DeepSeek-V4-Flash
+                - {{ .ModelName }}
                 - "--model-path"
-                - "/models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1"
+                - "{{ .ModelPath }}"
               image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-deepseek-v4-cuda13-dev.3
               workingDir: "/workspace/examples/backends/vllm"
               env:
@@ -71,7 +71,7 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.zhiliu.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -80,7 +80,7 @@ spec:
           volumes:
             - name: model-cache
               hostPath:
-                path: "/data/models/hub"
+                path: "{{ .HostCachePath }}"
                 type: Directory
             - name: torchinductor-cache
               hostPath:
@@ -101,8 +101,8 @@ spec:
               args:
                 - |
                   python3 -m dynamo.vllm \
-                    --model /models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1 \
-                    --served-model-name deepseek-ai/DeepSeek-V4-Flash \
+                    --model {{ .ModelPath }} \
+                    --served-model-name {{ .ModelName }} \
                     --disaggregation-mode decode \
                     --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
                     --trust-remote-code \
@@ -200,7 +200,7 @@ spec:
           labels:
             app.kubernetes.io/managed-by: inference-platform
             app.kubernetes.io/part-of: inference-platform
-            inference.zhiliu.dev/serving-application: deepseek-v4-flash-vllm-pd-disaggregated
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
         spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
@@ -209,7 +209,7 @@ spec:
           volumes:
             - name: model-cache
               hostPath:
-                path: "/data/models/hub"
+                path: "{{ .HostCachePath }}"
                 type: Directory
             - name: torchinductor-cache
               hostPath:
@@ -230,8 +230,8 @@ spec:
               args:
                 - |
                   python3 -m dynamo.vllm \
-                    --model /models/hub/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/rev1 \
-                    --served-model-name deepseek-ai/DeepSeek-V4-Flash \
+                    --model {{ .ModelPath }} \
+                    --served-model-name {{ .ModelName }} \
                     --disaggregation-mode prefill \
                     --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
                     --trust-remote-code \

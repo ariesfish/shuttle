@@ -15,8 +15,8 @@ spec:
     status: experimental
     warning: Prefer SGLang disaggregated recipe for Ready smoke.
   template:
-    path: deployment/examples/deepseek-v4-flash-vllm-dgd-disagg.yaml
-    renderer: string-replacement-v1
+    path: config/templates/deepseek-v4-flash-vllm-dgd-disagg.yaml
+    renderer: go-template-v1
   defaults:
     namespace: dynamo-system
     protocol: openai-compatible

@@ -22,7 +22,7 @@ src/config/recipes/<recipe-id>.yaml
 
 ## Template binding
 
-`spec.template.path` points to the Kubernetes manifest template relative to the repository root. `spec.template.renderer` selects the renderer implementation. The current renderer is `string-replacement-v1`.
+`spec.template.path` points to the Kubernetes manifest template relative to the repository root. `spec.template.renderer` selects the renderer implementation. New recipes should use `go-template-v1` with explicit `{{ .ResourceName }}`, `{{ .Namespace }}`, `{{ .ModelName }}`, `{{ .ModelPath }}`, and `{{ .HostCachePath }}` bindings. `string-replacement-v1` remains available only for legacy deployment examples.
 
 ## Validation
 

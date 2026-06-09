@@ -93,7 +93,7 @@ func TestRenderRecipeTemplateForDeepSeekV4FlashSGLang(t *testing.T) {
 	assertContains(t, manifest.Content, "path: \"/data/cache/hub\"")
 }
 
-func TestRenderRecipeTemplateSupportsExplicitVariables(t *testing.T) {
+func TestRenderRecipeTemplateSupportsGoTemplateRenderer(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	contents := `apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
@@ -124,7 +124,7 @@ spec:
 	assertContains(t, manifest.Content, "hostCache: /data/models/hub")
 }
 
-func TestRenderRecipeTemplateRejectsUnknownExplicitVariable(t *testing.T) {
+func TestRenderRecipeTemplateRejectsUnknownGoTemplateVariable(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	if err := os.WriteFile(templatePath, []byte("metadata:\n  name: {{ .Missing }}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func rendererTestRecipe(id string, backend string, templatePath string) ServingR
 			Model:    ServingRecipeModel{Family: "deepseek-v4", Variants: []string{"flash"}, Quantizations: []string{"fp8"}},
 			Runtime:  ServingRecipeRuntime{Backend: backend, Topology: "pd-disagg"},
 			Support:  ServingRecipeSupport{Status: RecipeSupportStatusSupported},
-			Template: ServingRecipeTemplate{Path: templatePath, Renderer: RecipeRendererStringReplacementV1},
+			Template: ServingRecipeTemplate{Path: templatePath, Renderer: RecipeRendererGoTemplateV1},
 		},
 	}
 }

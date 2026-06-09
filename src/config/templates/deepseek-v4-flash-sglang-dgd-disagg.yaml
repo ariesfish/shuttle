@@ -1,0 +1,297 @@
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: inference-platform
+    app.kubernetes.io/part-of: inference-platform
+    inference.zhiliu.dev/serving-application: {{ .ResourceName }}
+  name: {{ .ResourceName }}
+  namespace: {{ .Namespace }}
+spec:
+  components:
+    - name: Frontend
+      type: frontend
+      replicas: 1
+      podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "{{ .HostCachePath }}"
+                type: Directory
+          containers:
+            - image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-cuda13-0.5.12.post1
+              command:
+                - python3
+                - "-m"
+                - dynamo.frontend
+              args:
+                - "--model-name"
+                - {{ .ModelName }}
+                - "--model-path"
+                - "{{ .ModelPath }}"
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+              volumeMounts:
+                - name: model-cache
+                  mountPath: "/home/dynamo/.cache/huggingface"
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+    - name: decode
+      type: decode
+      replicas: 1
+      podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          nodeSelector:
+            kubernetes.io/hostname: icv63h7b6-1
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "{{ .HostCachePath }}"
+                type: Directory
+            - name: sglang-cache
+              hostPath:
+                path: "/data/dynamo-cache/sglang"
+                type: DirectoryOrCreate
+          containers:
+            - image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-cuda13-0.5.12.post1
+              workingDir: "/workspace/examples/backends/sglang"
+              command:
+                - python3
+                - "-m"
+                - dynamo.sglang
+              args:
+                - "--model-path"
+                - "{{ .ModelPath }}"
+                - "--served-model-name"
+                - {{ .ModelName }}
+                - "--tp"
+                - '8'
+                - "--trust-remote-code"
+                - "--moe-runner-backend"
+                - flashinfer_mxfp4
+                - "--page-size"
+                - '16'
+                - "--dyn-reasoning-parser"
+                - deepseek_v4
+                - "--dyn-tool-call-parser"
+                - deepseek_v4
+                - "--host"
+                - 0.0.0.0
+                - "--disaggregation-mode"
+                - decode
+                - "--disaggregation-transfer-backend"
+                - nixl
+                - "--disaggregation-bootstrap-port"
+                - '12345'
+              securityContext:
+                runAsUser: 0
+                capabilities:
+                  add:
+                    - IPC_LOCK
+                    - SYS_RESOURCE
+              startupProbe:
+                httpGet:
+                  path: "/health"
+                  port: 9090
+                periodSeconds: 10
+                timeoutSeconds: 10
+                failureThreshold: 360
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+                - name: NCCL_CUMEM_ENABLE
+                  value: '0'
+                - name: NCCL_SOCKET_IFNAME
+                  value: bond0.800
+                - name: NCCL_IB_DISABLE
+                  value: '0'
+                - name: NCCL_IB_HCA
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_TLS
+                  value: rc_x,rc,cuda_copy,cuda_ipc
+                - name: UCX_NET_DEVICES
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_IB_ADDR_TYPE
+                  value: ib_global
+                - name: UCX_RNDV_SCHEME
+                  value: get_zcopy
+                - name: UCX_RNDV_THRESH
+                  value: '0'
+                - name: UCX_RC_TIMEOUT
+                  value: 600s
+                - name: UCX_KEEPALIVE_INTERVAL
+                  value: 300s
+                - name: NIXL_LOG_LEVEL
+                  value: INFO
+                - name: NIXL_TELEMETRY_ENABLE
+                  value: "y"
+                - name: NIXL_TELEMETRY_EXPORTER
+                  value: prometheus
+                - name: NIXL_TELEMETRY_PROMETHEUS_PORT
+                  value: "19090"
+              volumeMounts:
+                - name: model-cache
+                  mountPath: "/home/dynamo/.cache/huggingface"
+                - name: sglang-cache
+                  mountPath: "/data/dynamo-cache/sglang"
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+              resources:
+                limits:
+                  nvidia.com/gpu: '8'
+                  rdma/rdma_shared_device_a: '8'
+                requests:
+                  nvidia.com/gpu: '8'
+                  ephemeral-storage: 2Gi
+                  rdma/rdma_shared_device_a: '8'
+      sharedMemorySize: 200Gi
+    - name: prefill
+      type: prefill
+      replicas: 1
+      podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: inference-platform
+            app.kubernetes.io/part-of: inference-platform
+            inference.zhiliu.dev/serving-application: {{ .ResourceName }}
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          nodeSelector:
+            kubernetes.io/hostname: icv63h7b6-1-1
+          volumes:
+            - name: model-cache
+              hostPath:
+                path: "{{ .HostCachePath }}"
+                type: Directory
+            - name: sglang-cache
+              hostPath:
+                path: "/data/dynamo-cache/sglang"
+                type: DirectoryOrCreate
+          containers:
+            - image: cr.yichang.puhui.chengfengerlai.com/nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.2.0-cuda13-0.5.12.post1
+              workingDir: "/workspace/examples/backends/sglang"
+              command:
+                - python3
+                - "-m"
+                - dynamo.sglang
+              args:
+                - "--model-path"
+                - "{{ .ModelPath }}"
+                - "--served-model-name"
+                - {{ .ModelName }}
+                - "--tp"
+                - '8'
+                - "--trust-remote-code"
+                - "--moe-runner-backend"
+                - flashinfer_mxfp4
+                - "--page-size"
+                - '16'
+                - "--dyn-reasoning-parser"
+                - deepseek_v4
+                - "--dyn-tool-call-parser"
+                - deepseek_v4
+                - "--host"
+                - 0.0.0.0
+                - "--disaggregation-mode"
+                - prefill
+                - "--disaggregation-transfer-backend"
+                - nixl
+                - "--disaggregation-bootstrap-port"
+                - '12345'
+              securityContext:
+                runAsUser: 0
+                capabilities:
+                  add:
+                    - IPC_LOCK
+                    - SYS_RESOURCE
+              startupProbe:
+                httpGet:
+                  path: "/health"
+                  port: 9090
+                periodSeconds: 10
+                timeoutSeconds: 10
+                failureThreshold: 360
+              env:
+                - name: HF_HOME
+                  value: "/home/dynamo/.cache/huggingface"
+                - name: HF_ENDPOINT
+                  value: https://hf-mirror.com
+                - name: HF_HUB_OFFLINE
+                  value: '1'
+                - name: NCCL_CUMEM_ENABLE
+                  value: '0'
+                - name: NCCL_SOCKET_IFNAME
+                  value: bond0.800
+                - name: NCCL_IB_DISABLE
+                  value: '0'
+                - name: NCCL_IB_HCA
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_TLS
+                  value: rc_x,rc,cuda_copy,cuda_ipc
+                - name: UCX_NET_DEVICES
+                  value: mlx5_0:1,mlx5_1:1,mlx5_2:1,mlx5_3:1,mlx5_6:1,mlx5_7:1,mlx5_8:1,mlx5_9:1
+                - name: UCX_IB_ADDR_TYPE
+                  value: ib_global
+                - name: UCX_RNDV_SCHEME
+                  value: get_zcopy
+                - name: UCX_RNDV_THRESH
+                  value: '0'
+                - name: UCX_RC_TIMEOUT
+                  value: 600s
+                - name: UCX_KEEPALIVE_INTERVAL
+                  value: 300s
+                - name: NIXL_LOG_LEVEL
+                  value: INFO
+                - name: NIXL_TELEMETRY_ENABLE
+                  value: "y"
+                - name: NIXL_TELEMETRY_EXPORTER
+                  value: prometheus
+                - name: NIXL_TELEMETRY_PROMETHEUS_PORT
+                  value: "19090"
+              volumeMounts:
+                - name: model-cache
+                  mountPath: "/home/dynamo/.cache/huggingface"
+                - name: sglang-cache
+                  mountPath: "/data/dynamo-cache/sglang"
+              name: main
+              envFrom:
+                - secretRef:
+                    name: hf-token-secret
+              resources:
+                limits:
+                  nvidia.com/gpu: '8'
+                  rdma/rdma_shared_device_a: '8'
+                requests:
+                  nvidia.com/gpu: '8'
+                  ephemeral-storage: 2Gi
+                  rdma/rdma_shared_device_a: '8'
+      sharedMemorySize: 200Gi

@@ -263,8 +263,10 @@ func validateRecipe(recipe ServingRecipe) error {
 	if strings.TrimSpace(recipe.Spec.Template.Path) == "" || strings.TrimSpace(recipe.Spec.Template.Renderer) == "" {
 		return fmt.Errorf("spec.template path and renderer are required")
 	}
-	if recipe.Spec.Template.Renderer != RecipeRendererStringReplacementV1 {
-		return fmt.Errorf("spec.template.renderer must be %s", RecipeRendererStringReplacementV1)
+	switch recipe.Spec.Template.Renderer {
+	case RecipeRendererGoTemplateV1, RecipeRendererStringReplacementV1:
+	default:
+		return fmt.Errorf("spec.template.renderer must be %s or %s", RecipeRendererGoTemplateV1, RecipeRendererStringReplacementV1)
 	}
 	if _, err := resolveExistingPath(recipe.Spec.Template.Path); err != nil {
 		return fmt.Errorf("template.path %s: %w", recipe.Spec.Template.Path, err)

@@ -23,7 +23,10 @@ func RenderKnownTemplate(app ServingApplication, artifact ModelArtifact) (Render
 	return RenderRecipeTemplate(recipe, app, artifact)
 }
 
-const RecipeRendererStringReplacementV1 = "string-replacement-v1"
+const (
+	RecipeRendererGoTemplateV1        = "go-template-v1"
+	RecipeRendererStringReplacementV1 = "string-replacement-v1"
+)
 
 type TemplateBindings struct {
 	ResourceName  string
@@ -57,7 +60,9 @@ func RenderRecipeTemplate(recipe ServingRecipe, app ServingApplication, artifact
 }
 
 func NewServingRecipeRenderPlan(recipe ServingRecipe, app ServingApplication, artifact ModelArtifact) (ServingRecipeRenderPlan, error) {
-	if recipe.Spec.Template.Renderer != RecipeRendererStringReplacementV1 {
+	switch recipe.Spec.Template.Renderer {
+	case RecipeRendererGoTemplateV1, RecipeRendererStringReplacementV1:
+	default:
 		return ServingRecipeRenderPlan{}, fmt.Errorf("%w: unsupported recipe renderer", ErrInvalidInput)
 	}
 	if recipe.Metadata.ID != app.Runtime.Recipe {
@@ -76,6 +81,8 @@ func NewServingRecipeRenderPlan(recipe ServingRecipe, app ServingApplication, ar
 
 func (p ServingRecipeRenderPlan) Render(content string) (string, error) {
 	switch p.Renderer {
+	case RecipeRendererGoTemplateV1:
+		return renderExplicitTemplate(content, p.Bindings)
 	case RecipeRendererStringReplacementV1:
 		return renderStringReplacementV1(content, p.Bindings)
 	default:
@@ -103,17 +110,6 @@ func NewTemplateBindings(app ServingApplication, artifact ModelArtifact) Templat
 }
 
 func renderStringReplacementV1(content string, bindings TemplateBindings) (string, error) {
-	// Prefer explicit variables in new templates. Keep literal replacements so
-	// existing Git-managed Serving Recipes continue to render without mutating
-	// historical deployment examples.
-	if strings.Contains(content, "{{") {
-		rendered, err := renderExplicitTemplate(content, bindings)
-		if err != nil {
-			return "", err
-		}
-		content = rendered
-	}
-
 	for _, replacement := range legacyTemplateReplacements(content, bindings) {
 		if strings.TrimSpace(replacement.oldText) == "name:" {
 			continue

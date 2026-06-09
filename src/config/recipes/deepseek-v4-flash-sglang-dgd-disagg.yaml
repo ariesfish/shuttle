@@ -15,8 +15,8 @@ spec:
     status: supported
     warning: SGLang disaggregated serving is the preferred DeepSeek V4 Flash recipe for Ready smoke.
   template:
-    path: deployment/examples/deepseek-v4-flash-sglang-dgd-disagg.yaml
-    renderer: string-replacement-v1
+    path: config/templates/deepseek-v4-flash-sglang-dgd-disagg.yaml
+    renderer: go-template-v1
   defaults:
     namespace: dynamo-system
     protocol: openai-compatible
