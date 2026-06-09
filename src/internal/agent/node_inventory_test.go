@@ -121,7 +121,7 @@ func TestKubectlNodeInventoryReporterBoundsParseWarnings(t *testing.T) {
 	}
 }
 
-func TestNVIDIAAcceleratorFactsCoverRepresentativeModels(t *testing.T) {
+func TestKubectlNodeInventoryReporterCoversRepresentativeNVIDIAModels(t *testing.T) {
 	cases := []struct {
 		product string
 		memory  string
@@ -132,17 +132,35 @@ func TestNVIDIAAcceleratorFactsCoverRepresentativeModels(t *testing.T) {
 		{product: "NVIDIA-A100-SXM4-80GB", memory: "81920"},
 	}
 	for _, tc := range cases {
-		accelerators := nvidiaAcceleratorsFromNode(map[string]string{"nvidia.com/gpu.product": tc.product, "nvidia.com/gpu.memory": tc.memory}, map[string]string{"nvidia.com/gpu": "8"}, nil)
-		if len(accelerators) != 1 || accelerators[0].Product != tc.product || accelerators[0].DeviceCount != 8 || accelerators[0].MemoryMiB == 0 {
-			t.Fatalf("unexpected accelerator facts for %s: %+v", tc.product, accelerators)
-		}
+		t.Run(tc.product, func(t *testing.T) {
+			reporter := kubectlNodeInventoryReporterWithNodes(t, nodeInventoryJSON(tc.product, tc.memory, "8", nil, nil))
+			request, ok, err := reporter.Report(context.Background(), "cluster-1", management.ClusterAgent{ID: "agent-1", ClusterID: "cluster-1"})
+			if err != nil || !ok {
+				t.Fatalf("report: ok=%v err=%v", ok, err)
+			}
+			if len(request.Nodes) != 1 || len(request.Nodes[0].Accelerators) != 1 {
+				t.Fatalf("expected one nvidia accelerator, got %+v", request.Nodes)
+			}
+			accelerator := request.Nodes[0].Accelerators[0]
+			if accelerator.Vendor != "nvidia" || accelerator.Product != tc.product || accelerator.DeviceCount != 8 || accelerator.MemoryMiB == 0 {
+				t.Fatalf("unexpected accelerator facts: %+v", accelerator)
+			}
+		})
 	}
 }
 
-func TestNVIDIAAcceleratorFactsAllowUnknownAndMissingRuntimeSignals(t *testing.T) {
-	accelerators := nvidiaAcceleratorsFromNode(nil, map[string]string{"nvidia.com/gpu": "4"}, nil)
-	if len(accelerators) != 1 || accelerators[0].Vendor != "nvidia" || accelerators[0].Product != "" || accelerators[0].DeviceCount != 4 || accelerators[0].VendorDetails != nil {
-		t.Fatalf("unexpected unknown model facts: %+v", accelerators)
+func TestKubectlNodeInventoryReporterAllowsUnknownNVIDIAModelAndMissingRuntimeSignals(t *testing.T) {
+	reporter := kubectlNodeInventoryReporterWithNodes(t, nodeInventoryJSON("", "", "4", nil, nil))
+	request, ok, err := reporter.Report(context.Background(), "cluster-1", management.ClusterAgent{ID: "agent-1", ClusterID: "cluster-1"})
+	if err != nil || !ok {
+		t.Fatalf("report: ok=%v err=%v", ok, err)
+	}
+	if len(request.Nodes) != 1 || len(request.Nodes[0].Accelerators) != 1 {
+		t.Fatalf("expected unknown nvidia accelerator, got %+v", request.Nodes)
+	}
+	accelerator := request.Nodes[0].Accelerators[0]
+	if accelerator.Vendor != "nvidia" || accelerator.Product != "" || accelerator.DeviceCount != 4 || accelerator.VendorDetails != nil {
+		t.Fatalf("unexpected unknown model facts: %+v", accelerator)
 	}
 }
 
@@ -169,27 +187,87 @@ func TestDCGMProbeWarningDoesNotDropNodeInventory(t *testing.T) {
 	}
 }
 
-func TestConnectivityFactsRepresentUnavailableAndIncompleteSignals(t *testing.T) {
-	facts := connectivityFromNode(map[string]string{"nvidia.com/nvlink.present": "false"}, nil)
-	if len(facts) != 2 || facts[0].Type != "nvlink" || facts[0].Present || facts[0].Confidence != "observed" || facts[1].Type != "rdma" || facts[1].Present || facts[1].Confidence != "unobserved" {
-		t.Fatalf("unexpected unavailable connectivity facts: %+v", facts)
+func TestKubectlNodeInventoryReporterRepresentsUnavailableAndIncompleteConnectivitySignals(t *testing.T) {
+	reporter := kubectlNodeInventoryReporterWithNodes(t, nodeInventoryJSON("NVIDIA-H200-SXM", "143360", "8", map[string]string{"nvidia.com/nvlink.present": "false", "feature.node.kubernetes.io/network-sriov.capable": ""}, nil))
+	request, ok, err := reporter.Report(context.Background(), "cluster-1", management.ClusterAgent{ID: "agent-1", ClusterID: "cluster-1"})
+	if err != nil || !ok {
+		t.Fatalf("report: ok=%v err=%v", ok, err)
 	}
-	facts = connectivityFromNode(map[string]string{"feature.node.kubernetes.io/network-sriov.capable": ""}, nil)
-	if len(facts) != 2 || facts[1].Type != "rdma" || !facts[1].Present || facts[1].Confidence != "incomplete" {
-		t.Fatalf("unexpected incomplete rdma fact: %+v", facts)
+	if len(request.Nodes) != 1 || len(request.Nodes[0].Connectivity) != 2 {
+		t.Fatalf("expected connectivity facts, got %+v", request.Nodes)
+	}
+	facts := request.Nodes[0].Connectivity
+	if facts[0].Type != "nvlink" || facts[0].Present || facts[0].Confidence != "observed" || facts[1].Type != "rdma" || !facts[1].Present || facts[1].Confidence != "incomplete" {
+		t.Fatalf("unexpected connectivity facts: %+v", facts)
+	}
+	if len(request.ProbeStatuses) != 3 || request.ProbeStatuses[2].Name != "connectivity" || request.ProbeStatuses[2].Status != "warning" || !strings.Contains(request.ProbeStatuses[2].Message, "nvlink") {
+		t.Fatalf("unexpected connectivity probe: %+v", request.ProbeStatuses)
 	}
 }
 
-func TestConnectivityProbeWarnsOnPartialSignals(t *testing.T) {
-	probe := connectivityProbeStatus([]management.AcceleratorInventoryNode{{Connectivity: connectivityFromNode(map[string]string{"nvidia.com/nvlink.present": "true"}, nil)}})
-	if probe.Name != "connectivity" || probe.Status != "warning" || !strings.Contains(probe.Message, "rdma") {
-		t.Fatalf("unexpected connectivity warning: %+v", probe)
+func TestKubectlNodeInventoryReporterReportsOnlyAcceleratorResourceNames(t *testing.T) {
+	reporter := kubectlNodeInventoryReporterWithNodes(t, `{
+		"items": [{
+			"metadata": {"name": "node-a", "labels": {"nvidia.com/gpu.product": "NVIDIA-H200-SXM"}},
+			"status": {
+				"capacity": {"cpu": "128", "memory": "1Ti", "pods": "100", "nvidia.com/gpu": "8"},
+				"allocatable": {"example.com/fpga-accelerator": "1", "hugepages-1Gi": "2"}
+			}
+		}]
+	}`)
+	request, ok, err := reporter.Report(context.Background(), "cluster-1", management.ClusterAgent{ID: "agent-1", ClusterID: "cluster-1"})
+	if err != nil || !ok {
+		t.Fatalf("report: ok=%v err=%v", ok, err)
+	}
+	if len(request.Nodes) != 1 || strings.Join(request.Nodes[0].AcceleratorResourceNames, ",") != "example.com/fpga-accelerator,nvidia.com/gpu" {
+		t.Fatalf("unexpected resources: %+v", request.Nodes)
 	}
 }
 
-func TestAcceleratorResourceNamesIgnoresGeneralResources(t *testing.T) {
-	resources := acceleratorResourceNames(map[string]string{"cpu": "128", "memory": "1Ti", "pods": "100", "nvidia.com/gpu": "8"}, map[string]string{"example.com/fpga-accelerator": "1", "hugepages-1Gi": "2"})
-	if strings.Join(resources, ",") != "example.com/fpga-accelerator,nvidia.com/gpu" {
-		t.Fatalf("unexpected resources: %+v", resources)
+func kubectlNodeInventoryReporterWithNodes(t *testing.T, nodesJSON string) KubectlNodeInventoryReporter {
+	t.Helper()
+	return KubectlNodeInventoryReporter{runKubectl: func(_ context.Context, args ...string) ([]byte, error) {
+		switch joined := strings.Join(args, " "); joined {
+		case "get nodes -o json":
+			return []byte(nodesJSON), nil
+		case "get pods -A -l app=nvidia-dcgm-exporter -o json":
+			return []byte(`{"items":[{}]}`), nil
+		default:
+			t.Fatalf("unexpected kubectl args: %s", joined)
+			return nil, nil
+		}
+	}}
+}
+
+func nodeInventoryJSON(product string, memory string, gpuCount string, labels map[string]string, annotations map[string]string) string {
+	mergedLabels := map[string]string{}
+	if product != "" {
+		mergedLabels["nvidia.com/gpu.product"] = product
 	}
+	if memory != "" {
+		mergedLabels["nvidia.com/gpu.memory"] = memory
+	}
+	for key, value := range labels {
+		mergedLabels[key] = value
+	}
+	return nodeInventoryJSONWithMaps(mergedLabels, annotations, map[string]string{"nvidia.com/gpu": gpuCount}, nil)
+}
+
+func nodeInventoryJSONWithMaps(labels map[string]string, annotations map[string]string, capacity map[string]string, allocatable map[string]string) string {
+	labelsJSON := inventoryStringMapJSON(labels)
+	annotationsJSON := inventoryStringMapJSON(annotations)
+	capacityJSON := inventoryStringMapJSON(capacity)
+	allocatableJSON := inventoryStringMapJSON(allocatable)
+	return `{"items":[{"metadata":{"name":"node-a","labels":` + labelsJSON + `,"annotations":` + annotationsJSON + `},"status":{"capacity":` + capacityJSON + `,"allocatable":` + allocatableJSON + `}}]}`
+}
+
+func inventoryStringMapJSON(values map[string]string) string {
+	if len(values) == 0 {
+		return `{}`
+	}
+	entries := make([]string, 0, len(values))
+	for key, value := range values {
+		entries = append(entries, `"`+key+`":"`+value+`"`)
+	}
+	return `{` + strings.Join(entries, ",") + `}`
 }

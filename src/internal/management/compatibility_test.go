@@ -1,7 +1,11 @@
 package management
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -66,39 +70,46 @@ func TestServingApplicationValidationUsesCompatibleInventory(t *testing.T) {
 	}
 }
 
-func TestServingApplicationValidationRejectsMissingStaleAndIncompatibleInventory(t *testing.T) {
+func TestServingApplicationValidationRejectsMissingInventory(t *testing.T) {
 	store, project, cluster, agent, artifact := compatibilityStore(t)
 	_, err := store.HeartbeatAgent(agent.ID, HeartbeatRequest{LastInventoryFreshness: string(AcceleratorInventoryFreshnessMissing)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "accelerator inventory missing") {
-		t.Fatalf("expected missing inventory error, got %v", err)
+	assertInvalidInputContains(t, err, "accelerator inventory missing")
+}
+
+func TestServingApplicationValidationRejectsIncompatibleInventory(t *testing.T) {
+	cases := []struct {
+		name      string
+		memoryMiB int
+		gpuCount  int
+		rdma      bool
+		wantError string
+	}{
+		{name: "insufficient memory", memoryMiB: 40960, gpuCount: 8, rdma: true, wantError: "insufficient NVIDIA memoryMiB"},
+		{name: "insufficient gpu count", memoryMiB: 143360, gpuCount: 4, rdma: true, wantError: "insufficient NVIDIA GPU count"},
+		{name: "missing rdma", memoryMiB: 143360, gpuCount: 8, rdma: false, wantError: "missing RDMA connectivity"},
 	}
-	reportCompatibilityInventory(t, store, cluster, agent, 40960, 8, true)
-	_, err = store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "insufficient NVIDIA memoryMiB") {
-		t.Fatalf("expected memory error, got %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, project, cluster, agent, artifact := compatibilityStore(t)
+			reportCompatibilityInventory(t, store, cluster, agent, tc.memoryMiB, tc.gpuCount, tc.rdma)
+			_, err := store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
+			assertInvalidInputContains(t, err, tc.wantError)
+		})
 	}
-	reportCompatibilityInventory(t, store, cluster, agent, 143360, 4, true)
-	_, err = store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "insufficient NVIDIA GPU count") {
-		t.Fatalf("expected gpu count error, got %v", err)
-	}
-	reportCompatibilityInventory(t, store, cluster, agent, 143360, 8, false)
-	_, err = store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "missing RDMA connectivity") {
-		t.Fatalf("expected rdma error, got %v", err)
-	}
+}
+
+func TestServingApplicationValidationRejectsStaleInventory(t *testing.T) {
+	store, project, cluster, agent, artifact := compatibilityStore(t)
 	now := time.Date(2026, 6, 9, 11, 0, 0, 0, time.UTC)
 	store.now = func() time.Time { return now.Add(-10 * time.Minute) }
 	reportCompatibilityInventory(t, store, cluster, agent, 143360, 8, true)
 	store.now = func() time.Time { return now }
-	_, err = store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "accelerator inventory stale") {
-		t.Fatalf("expected stale error, got %v", err)
-	}
+	_, err := store.CreateServingApplication(compatibleRequest(project, cluster, artifact))
+	assertInvalidInputContains(t, err, "accelerator inventory stale")
 }
 
 func TestServingApplicationValidationUsesAcceleratorPoolPlacement(t *testing.T) {
@@ -114,7 +125,75 @@ func TestServingApplicationValidationUsesAcceleratorPoolPlacement(t *testing.T) 
 		t.Fatalf("expected pool placement compatible, got %v", err)
 	}
 	request.Placement.AcceleratorPoolID = "missing"
-	if _, err := store.CreateServingApplication(request); !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "accelerator pool") {
-		t.Fatalf("expected missing pool error, got %v", err)
+	_, err = store.CreateServingApplication(request)
+	assertInvalidInputContains(t, err, "accelerator pool")
+}
+
+func TestServingApplicationRouteValidatesAcceleratorInventory(t *testing.T) {
+	store, project, cluster, agent, artifact := compatibilityStore(t)
+	server := NewServer(store, nil).Routes()
+
+	inventory := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/accelerator-inventory", ReportAcceleratorInventoryRequest{
+		AgentID:       agent.ID,
+		SchemaVersion: "accelerator-inventory/v1alpha1",
+		ObservedAt:    time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+		Nodes: []AcceleratorInventoryNode{{
+			Name:         "node-a",
+			Labels:       map[string]string{"pool": "h200"},
+			Accelerators: []AcceleratorInventoryAccelerator{{Vendor: "nvidia", Product: "NVIDIA H200 SXM", DeviceCount: 8, MemoryMiB: 143360}},
+			Connectivity: []AcceleratorInventoryConnectivity{{Type: "rdma", Present: true, Confidence: "observed"}},
+		}},
+	}, http.StatusOK)
+
+	app := requestJSON[ServingApplication](t, server, http.MethodPost, "/v1/apps", compatibleRequest(project, cluster, artifact), http.StatusCreated)
+	if app.ValidationInventoryRevision != inventory.Revision {
+		t.Fatalf("expected route-created app to record inventory revision, app=%+v inventory=%+v", app, inventory)
+	}
+
+	badCluster, err := store.CreateCluster(CreateClusterRequest{Name: "partial"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	badAgent, err := store.RegisterAgent(RegisterAgentRequest{ClusterID: badCluster.ID, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+badCluster.ID+"/accelerator-inventory", ReportAcceleratorInventoryRequest{
+		AgentID:       badAgent.ID,
+		SchemaVersion: "accelerator-inventory/v1alpha1",
+		ObservedAt:    time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+		Nodes: []AcceleratorInventoryNode{{
+			Name:         "node-a",
+			Accelerators: []AcceleratorInventoryAccelerator{{Vendor: "nvidia", Product: "NVIDIA H200 SXM", DeviceCount: 8, MemoryMiB: 143360}},
+			Connectivity: []AcceleratorInventoryConnectivity{{Type: "rdma", Present: false, Confidence: "observed"}},
+		}},
+	}, http.StatusOK)
+	badRequest := compatibleRequest(project, badCluster, artifact)
+	assertRouteErrorContains(t, server, http.MethodPost, "/v1/apps", badRequest, http.StatusBadRequest, "missing RDMA connectivity")
+}
+
+func assertInvalidInputContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected invalid input containing %q, got %v", want, err)
+	}
+}
+
+func assertRouteErrorContains(t *testing.T, handler http.Handler, method string, path string, body any, expectedStatus int, want string) {
+	t.Helper()
+	var requestBody bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&requestBody).Encode(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := httptest.NewRequest(method, path, &requestBody)
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != expectedStatus || !strings.Contains(recorder.Body.String(), want) {
+		t.Fatalf("%s %s status=%d body=%s, want status=%d containing %q", method, path, recorder.Code, recorder.Body.String(), expectedStatus, want)
 	}
 }
