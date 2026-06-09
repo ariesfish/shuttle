@@ -61,7 +61,7 @@ func (c *ManagementClient) Heartbeat(ctx context.Context, agentID string, req ma
 
 func (c *ManagementClient) ReportAcceleratorInventory(ctx context.Context, clusterID string, req management.ReportAcceleratorInventoryRequest) (management.AcceleratorInventory, error) {
 	var inventory management.AcceleratorInventory
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/clusters/"+clusterID+"/accelerator-inventory", req, &inventory); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/clusters/"+clusterID+"/inventory", req, &inventory); err != nil {
 		return management.AcceleratorInventory{}, err
 	}
 	return inventory, nil

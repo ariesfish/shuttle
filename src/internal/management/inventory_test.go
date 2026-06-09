@@ -166,7 +166,7 @@ func TestAcceleratorInventoryAuditAndRoutes(t *testing.T) {
 	}
 	server := NewServer(store, slog.Default()).Routes()
 
-	reported := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/accelerator-inventory", ReportAcceleratorInventoryRequest{
+	reported := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/inventory", ReportAcceleratorInventoryRequest{
 		AgentID:       agent.ID,
 		SchemaVersion: "accelerator-inventory/v1alpha1",
 		ObservedAt:    time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
@@ -176,11 +176,11 @@ func TestAcceleratorInventoryAuditAndRoutes(t *testing.T) {
 		t.Fatalf("unexpected reported inventory: %+v", reported)
 	}
 
-	fetched := requestJSON[AcceleratorInventory](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/accelerator-inventory", nil, http.StatusOK)
+	fetched := requestJSON[AcceleratorInventory](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/inventory", nil, http.StatusOK)
 	if fetched.Revision != reported.Revision || len(fetched.Nodes) != 1 || fetched.RevisionCount != 1 {
 		t.Fatalf("unexpected fetched inventory: %+v", fetched)
 	}
-	revisions := requestJSON[[]AcceleratorInventory](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/accelerator-inventory/revisions", nil, http.StatusOK)
+	revisions := requestJSON[[]AcceleratorInventory](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/inventory/revisions", nil, http.StatusOK)
 	if len(revisions) != 1 || revisions[0].Revision != reported.Revision {
 		t.Fatalf("unexpected revisions: %+v", revisions)
 	}

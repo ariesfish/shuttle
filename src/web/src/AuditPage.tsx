@@ -4,7 +4,7 @@ import { useI18n } from './i18n';
 
 export function AuditPage() {
   const { t } = useI18n();
-  const records = useQuery({ queryKey: ['audit-records'], queryFn: api.listAuditRecords, refetchInterval: 10000 });
+  const records = useQuery({ queryKey: ['audit'], queryFn: api.listAuditRecords, refetchInterval: 10000 });
   const sorted = [...(records.data ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (

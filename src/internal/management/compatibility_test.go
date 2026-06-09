@@ -133,7 +133,7 @@ func TestServingApplicationRouteValidatesAcceleratorInventory(t *testing.T) {
 	store, project, cluster, agent, artifact := compatibilityStore(t)
 	server := NewServer(store, nil).Routes()
 
-	inventory := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/accelerator-inventory", ReportAcceleratorInventoryRequest{
+	inventory := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/inventory", ReportAcceleratorInventoryRequest{
 		AgentID:       agent.ID,
 		SchemaVersion: "accelerator-inventory/v1alpha1",
 		ObservedAt:    time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
@@ -158,7 +158,7 @@ func TestServingApplicationRouteValidatesAcceleratorInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+badCluster.ID+"/accelerator-inventory", ReportAcceleratorInventoryRequest{
+	requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+badCluster.ID+"/inventory", ReportAcceleratorInventoryRequest{
 		AgentID:       badAgent.ID,
 		SchemaVersion: "accelerator-inventory/v1alpha1",
 		ObservedAt:    time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
@@ -170,6 +170,33 @@ func TestServingApplicationRouteValidatesAcceleratorInventory(t *testing.T) {
 	}, http.StatusOK)
 	badRequest := compatibleRequest(project, badCluster, artifact)
 	assertRouteErrorContains(t, server, http.MethodPost, "/v1/apps", badRequest, http.StatusBadRequest, "missing RDMA connectivity")
+}
+
+func TestShortPhase2Routes(t *testing.T) {
+	store, project, cluster, agent, artifact := compatibilityStore(t)
+	server := NewServer(store, nil).Routes()
+
+	inventory := requestJSON[AcceleratorInventory](t, server, http.MethodPost, "/v1/clusters/"+cluster.ID+"/inventory", ReportAcceleratorInventoryRequest{AgentID: agent.ID, SchemaVersion: "accelerator-inventory/v1alpha1", ObservedAt: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC), Nodes: []AcceleratorInventoryNode{{Name: "node-a", Labels: map[string]string{"pool": "h200"}, Accelerators: []AcceleratorInventoryAccelerator{{Vendor: "nvidia", Product: "NVIDIA H200 SXM", DeviceCount: 8, MemoryMiB: 143360}}, Connectivity: []AcceleratorInventoryConnectivity{{Type: "rdma", Present: true, Confidence: "observed"}}}}}, http.StatusOK)
+	fetched := requestJSON[AcceleratorInventory](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/inventory", nil, http.StatusOK)
+	if fetched.Revision != inventory.Revision {
+		t.Fatalf("expected inventory route to read reported revision, fetched=%+v inventory=%+v", fetched, inventory)
+	}
+
+	pool := requestJSON[AcceleratorPool](t, server, http.MethodPost, "/v1/pools", CreateAcceleratorPoolRequest{ClusterID: cluster.ID, Name: "h200", NodeSelector: map[string]string{"pool": "h200"}}, http.StatusCreated)
+	pools := requestJSON[[]AcceleratorPool](t, server, http.MethodGet, "/v1/pools?clusterId="+cluster.ID, nil, http.StatusOK)
+	if len(pools) != 1 || pools[0].ID != pool.ID {
+		t.Fatalf("expected pools route to read created pool, pools=%+v pool=%+v", pools, pool)
+	}
+
+	app := requestJSON[ServingApplication](t, server, http.MethodPost, "/v1/apps", compatibleRequest(project, cluster, artifact), http.StatusCreated)
+	tuning := requestJSON[TuningRecord](t, server, http.MethodPost, "/v1/tunings", CreateTuningRecordRequest{ServingApplicationID: app.ID, Reason: "compat"}, http.StatusCreated)
+	fetchedTuning := requestJSON[TuningRecord](t, server, http.MethodGet, "/v1/tunings/"+tuning.ID, nil, http.StatusOK)
+	if fetchedTuning.ID != tuning.ID {
+		t.Fatalf("expected tuning route to read created tuning, got %+v", fetchedTuning)
+	}
+
+	requestJSON[ProductionObservabilityEntryPoints](t, server, http.MethodGet, "/v1/apps/"+app.ID+"/observability/links", nil, http.StatusOK)
+	requestJSON[[]AuditRecord](t, server, http.MethodGet, "/v1/audit", nil, http.StatusOK)
 }
 
 func assertInvalidInputContains(t *testing.T, err error, want string) {

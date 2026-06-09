@@ -60,7 +60,7 @@ func TestProductionObservabilityRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(store, nil).Routes()
-	entry := requestJSON[ProductionObservabilityEntryPoints](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/observability/entry-points", nil, http.StatusOK)
+	entry := requestJSON[ProductionObservabilityEntryPoints](t, server, http.MethodGet, "/v1/clusters/"+cluster.ID+"/observability/links", nil, http.StatusOK)
 	if entry.ClusterID != cluster.ID || len(entry.Alerts) == 0 {
 		t.Fatalf("unexpected route entry: %+v", entry)
 	}

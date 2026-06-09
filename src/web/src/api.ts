@@ -376,16 +376,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   listClusters: () => request<InferenceCluster[]>('/v1/clusters'),
-  getAcceleratorInventory: (clusterId: string) => request<AcceleratorInventory>(`/v1/clusters/${clusterId}/accelerator-inventory`),
-  listAcceleratorInventoryRevisions: (clusterId: string) => request<AcceleratorInventory[]>(`/v1/clusters/${clusterId}/accelerator-inventory/revisions`),
+  getAcceleratorInventory: (clusterId: string) => request<AcceleratorInventory>(`/v1/clusters/${clusterId}/inventory`),
+  listAcceleratorInventoryRevisions: (clusterId: string) => request<AcceleratorInventory[]>(`/v1/clusters/${clusterId}/inventory/revisions`),
   createCluster: (input: CreateClusterInput) => request<InferenceCluster>('/v1/clusters', {
     method: 'POST',
     body: JSON.stringify(input),
   }),
   listAgents: () => request<ClusterAgent[]>('/v1/agents'),
-  listAcceleratorPools: (clusterId?: string) => request<AcceleratorPool[]>(`/v1/accelerator-pools${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
-  listAcceleratorPoolSummaries: (clusterId?: string) => request<AcceleratorPoolSummary[]>(`/v1/accelerator-pools/summaries${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
-  createAcceleratorPool: (input: CreateAcceleratorPoolInput) => request<AcceleratorPool>('/v1/accelerator-pools', {
+  listAcceleratorPools: (clusterId?: string) => request<AcceleratorPool[]>(`/v1/pools${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
+  listAcceleratorPoolSummaries: (clusterId?: string) => request<AcceleratorPoolSummary[]>(`/v1/pools/summaries${clusterId ? `?clusterId=${encodeURIComponent(clusterId)}` : ''}`),
+  createAcceleratorPool: (input: CreateAcceleratorPoolInput) => request<AcceleratorPool>('/v1/pools', {
     method: 'POST',
     body: JSON.stringify(input),
   }),
@@ -414,13 +414,13 @@ export const api = {
   listServingApplicationTransitions: (appId: string) => request<ServingApplicationTransition[]>(`/v1/apps/${appId}/transitions`),
   listTasks: () => request<Task[]>('/v1/tasks'),
   listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
-  listTuningRecords: (servingApplicationId?: string) => request<TuningRecord[]>(`/v1/tuning-records${servingApplicationId ? `?servingApplicationId=${encodeURIComponent(servingApplicationId)}` : ''}`),
-  createTuningRecord: (input: CreateTuningRecordInput) => request<TuningRecord>('/v1/tuning-records', {
+  listTuningRecords: (servingApplicationId?: string) => request<TuningRecord[]>(`/v1/tunings${servingApplicationId ? `?servingApplicationId=${encodeURIComponent(servingApplicationId)}` : ''}`),
+  createTuningRecord: (input: CreateTuningRecordInput) => request<TuningRecord>('/v1/tunings', {
     method: 'POST',
     body: JSON.stringify(input),
   }),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/apps/${appId}/observability`),
   getObservabilitySummary: (appId: string) => request<ObservabilitySummary>(`/v1/apps/${appId}/observability/summary`),
-  getProductionObservabilityEntryPoints: (appId: string) => request<ProductionObservabilityEntryPoints>(`/v1/apps/${appId}/observability/entry-points`),
-  listAuditRecords: () => request<AuditRecord[]>('/v1/audit-records'),
+  getProductionObservabilityEntryPoints: (appId: string) => request<ProductionObservabilityEntryPoints>(`/v1/apps/${appId}/observability/links`),
+  listAuditRecords: () => request<AuditRecord[]>('/v1/audit'),
 };

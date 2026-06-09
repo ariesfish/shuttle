@@ -43,17 +43,17 @@ export function ServingAppsPage() {
     refetchInterval: 2000,
   });
   const tuningRecords = useQuery({
-    queryKey: ['tuning-records', selectedAppId],
+    queryKey: ['tunings', selectedAppId],
     queryFn: () => api.listTuningRecords(selectedAppId),
     enabled: Boolean(selectedAppId),
     refetchInterval: 5000,
   });
   const createTuningRecord = useMutation({
     mutationFn: api.createTuningRecord,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tuning-records', selectedAppId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tunings', selectedAppId] }),
   });
   const observabilityEntryPoints = useQuery({
-    queryKey: ['observability-entry-points', selectedAppId],
+    queryKey: ['observability-links', selectedAppId],
     queryFn: () => api.getProductionObservabilityEntryPoints(selectedAppId),
     enabled: Boolean(selectedAppId),
     refetchInterval: 10000,

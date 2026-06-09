@@ -169,7 +169,7 @@ summary() {
   transitions="$(json_get "/v1/apps/${app_id}/transitions")"
   endpoints="$(json_get /v1/endpoints)"
   tasks="$(json_get /v1/tasks)"
-  audit="$(json_get /v1/audit-records)"
+  audit="$(json_get /v1/audit)"
   printf '%s' "${apps}" >"${SMOKE_DIR}/apps.json"
   printf '%s' "${transitions}" >"${SMOKE_DIR}/transitions.json"
   printf '%s' "${endpoints}" >"${SMOKE_DIR}/endpoints.json"
