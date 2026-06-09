@@ -42,6 +42,16 @@ export function ServingAppsPage() {
     enabled: Boolean(selectedAppId),
     refetchInterval: 2000,
   });
+  const tuningRecords = useQuery({
+    queryKey: ['tuning-records', selectedAppId],
+    queryFn: () => api.listTuningRecords(selectedAppId),
+    enabled: Boolean(selectedAppId),
+    refetchInterval: 5000,
+  });
+  const createTuningRecord = useMutation({
+    mutationFn: api.createTuningRecord,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tuning-records', selectedAppId] }),
+  });
   const observabilitySummary = useQuery({
     queryKey: ['observability-summary', selectedAppId],
     queryFn: () => api.getObservabilitySummary(selectedAppId),
@@ -81,7 +91,7 @@ export function ServingAppsPage() {
             />
           ) : apps.isLoading ? null : <p className="muted">{t('noData')}</p>}
         </section>
-        <ServingAppDetails selectedAppId={selectedAppId} summary={observabilitySummary.data} summaryError={observabilitySummary.error?.message} transitions={transitions.data} diagnosticsTask={control.latestDiagnosticsTask} />
+        <ServingAppDetails selectedAppId={selectedAppId} tuningRecords={tuningRecords.data} tuningError={tuningRecords.error?.message || createTuningRecord.error?.message} tuningCreating={createTuningRecord.isPending} onCreateTuningRecord={(reason) => createTuningRecord.mutate({ servingApplicationId: selectedAppId, reason, benchmarkSummary: { source: 'manual-summary' }, plannerSettings: {}, recommendations: [] })} summary={observabilitySummary.data} summaryError={observabilitySummary.error?.message} transitions={transitions.data} diagnosticsTask={control.latestDiagnosticsTask} />
         <RecentTasks tasks={tasks.data} />
       </section>
     </div>

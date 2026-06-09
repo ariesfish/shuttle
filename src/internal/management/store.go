@@ -35,6 +35,7 @@ type ManagementStore interface {
 	RecipeStore
 	ServingApplicationStore
 	ObservabilityStore
+	TuningRecordStore
 	AuditStore
 	TaskStore
 	ServingApplicationRepository
@@ -92,6 +93,12 @@ type ObservabilityStore interface {
 	GetObservabilityEntry(string) (ObservabilityEntry, error)
 }
 
+type TuningRecordStore interface {
+	CreateTuningRecord(actor string, req CreateTuningRecordRequest) (TuningRecord, error)
+	ListTuningRecords(servingApplicationID string) ([]TuningRecord, error)
+	GetTuningRecord(id string) (TuningRecord, error)
+}
+
 type AuditStore interface {
 	ListAuditRecords() ([]AuditRecord, error)
 	RecordAudit(actor, action, resource string, metadata map[string]any) (AuditRecord, error)
@@ -123,6 +130,7 @@ type storeData struct {
 	ServingApplications           map[string]ServingApplication           `json:"servingApplications"`
 	Transitions                   map[string]ServingApplicationTransition `json:"transitions"`
 	Endpoints                     map[string]EndpointRegistryEntry        `json:"endpoints"`
+	TuningRecords                 map[string]TuningRecord                 `json:"tuningRecords"`
 	AuditRecords                  map[string]AuditRecord                  `json:"auditRecords"`
 	Tasks                         map[string]Task                         `json:"tasks"`
 	AcceleratorInventory          map[string]AcceleratorInventory         `json:"acceleratorInventory"`
@@ -154,6 +162,7 @@ func newStoreData() storeData {
 		ServingApplications:           map[string]ServingApplication{},
 		Transitions:                   map[string]ServingApplicationTransition{},
 		Endpoints:                     map[string]EndpointRegistryEntry{},
+		TuningRecords:                 map[string]TuningRecord{},
 		AuditRecords:                  map[string]AuditRecord{},
 		Tasks:                         map[string]Task{},
 		AcceleratorInventory:          map[string]AcceleratorInventory{},
@@ -755,6 +764,55 @@ func (s *FileStore) GetObservabilityEntry(appID string) (ObservabilityEntry, err
 		return ObservabilityEntry{}, fmt.Errorf("%w: cluster does not exist", ErrInvalidInput)
 	}
 	return buildObservabilityEntry(app, cluster), nil
+}
+
+func (s *FileStore) CreateTuningRecord(actor string, req CreateTuningRecordRequest) (TuningRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	app, ok := s.data.ServingApplications[req.ServingApplicationID]
+	if !ok {
+		return TuningRecord{}, ErrNotFound
+	}
+	if app.ValidationInventoryRevision == "" {
+		return TuningRecord{}, fmt.Errorf("%w: serving application has no validation inventory revision", ErrInvalidInput)
+	}
+	now := s.now().UTC()
+	record := TuningRecord{ID: s.nextID("tuning"), ServingApplicationID: app.ID, ClusterID: app.Placement.ClusterID, AcceleratorPoolID: app.Placement.AcceleratorPoolID, ModelArtifactID: app.Model.ArtifactID, ServingRecipeID: app.Runtime.Recipe, AcceleratorInventoryRevision: app.ValidationInventoryRevision, BenchmarkSummary: cloneAnyMap(req.BenchmarkSummary), PlannerSettings: cloneAnyMap(req.PlannerSettings), Recommendations: append([]string(nil), req.Recommendations...), Reason: strings.TrimSpace(req.Reason), Actor: strings.TrimSpace(actor), CreatedAt: now}
+	s.data.TuningRecords[record.ID] = record
+	s.recordAuditLocked(actor, "create_tuning_record", record.ID, map[string]any{"servingApplicationId": app.ID, "inventoryRevision": record.AcceleratorInventoryRevision})
+	return record, s.saveLocked()
+}
+
+func (s *FileStore) ListTuningRecords(servingApplicationID string) ([]TuningRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	records := make([]TuningRecord, 0, len(s.data.TuningRecords))
+	for _, record := range s.data.TuningRecords {
+		if strings.TrimSpace(servingApplicationID) == "" || record.ServingApplicationID == servingApplicationID {
+			record.BenchmarkSummary = cloneAnyMap(record.BenchmarkSummary)
+			record.PlannerSettings = cloneAnyMap(record.PlannerSettings)
+			record.Recommendations = append([]string(nil), record.Recommendations...)
+			records = append(records, record)
+		}
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].CreatedAt.Before(records[j].CreatedAt) })
+	return records, nil
+}
+
+func (s *FileStore) GetTuningRecord(id string) (TuningRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record, ok := s.data.TuningRecords[id]
+	if !ok {
+		return TuningRecord{}, ErrNotFound
+	}
+	record.BenchmarkSummary = cloneAnyMap(record.BenchmarkSummary)
+	record.PlannerSettings = cloneAnyMap(record.PlannerSettings)
+	record.Recommendations = append([]string(nil), record.Recommendations...)
+	return record, nil
 }
 
 func (s *FileStore) ListAuditRecords() ([]AuditRecord, error) {

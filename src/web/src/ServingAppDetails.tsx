@@ -1,14 +1,16 @@
-import { type ObservabilitySummary, type ServingApplicationTransition, type Task } from './api';
+import { useState } from 'react';
+import { type ObservabilitySummary, type ServingApplicationTransition, type Task, type TuningRecord } from './api';
 import { useI18n } from './i18n';
 
-export function ServingAppDetails({ selectedAppId, summary, summaryError, transitions, diagnosticsTask }: { selectedAppId: string; summary?: ObservabilitySummary; summaryError?: string; transitions?: ServingApplicationTransition[]; diagnosticsTask?: Task }) {
+export function ServingAppDetails({ selectedAppId, summary, summaryError, transitions, diagnosticsTask, tuningRecords, tuningError, tuningCreating, onCreateTuningRecord }: { selectedAppId: string; summary?: ObservabilitySummary; summaryError?: string; transitions?: ServingApplicationTransition[]; diagnosticsTask?: Task; tuningRecords?: TuningRecord[]; tuningError?: string; tuningCreating: boolean; onCreateTuningRecord: (reason: string) => void }) {
   const { t } = useI18n();
   return (
     <section className="card">
       <h2>History & Diagnostics</h2>
-      {!selectedAppId ? <p className="muted">Select a Serving Application to inspect transitions and diagnostics.</p> : null}
+      {!selectedAppId ? <p className="muted">Select a Serving Application to inspect transitions, tuning, and diagnostics.</p> : null}
       {selectedAppId ? (
         <div className="grid">
+          <TuningRecords records={tuningRecords} error={tuningError} creating={tuningCreating} onCreate={onCreateTuningRecord} />
           <ObservabilitySummaryCard summary={summary} error={summaryError} />
           <div>
             <h3>Transitions</h3>
@@ -24,6 +26,28 @@ export function ServingAppDetails({ selectedAppId, summary, summaryError, transi
         </div>
       ) : null}
     </section>
+  );
+}
+
+function TuningRecords({ records, error, creating, onCreate }: { records?: TuningRecord[]; error?: string; creating: boolean; onCreate: (reason: string) => void }) {
+  const [reason, setReason] = useState('manual baseline');
+  return (
+    <div>
+      <h3>Tuning Records</h3>
+      <div className="toolbar">
+        <input className="input" value={reason} onChange={(event) => setReason(event.target.value)} />
+        <button className="button secondary" disabled={creating} onClick={() => onCreate(reason)}>Create</button>
+      </div>
+      {error ? <p className="error">{error}</p> : null}
+      {records?.slice(-5).reverse().map((record) => (
+        <div key={record.id} className="card" style={{ marginBottom: 8 }}>
+          <strong>{record.reason || record.id}</strong> <span className="badge muted">{record.actor}</span>
+          <div className="muted">Inventory: <code>{record.acceleratorInventoryRevision}</code></div>
+          <div className="muted">Recipe: {record.servingRecipeId}</div>
+          {record.recommendations?.length ? <div>{record.recommendations.join(', ')}</div> : null}
+        </div>
+      )) ?? <p className="muted">No tuning records.</p>}
+    </div>
   );
 }
 

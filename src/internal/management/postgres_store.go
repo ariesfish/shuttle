@@ -101,6 +101,9 @@ func normalizeStoreData(data *storeData) {
 	if data.Endpoints == nil {
 		data.Endpoints = map[string]EndpointRegistryEntry{}
 	}
+	if data.TuningRecords == nil {
+		data.TuningRecords = map[string]TuningRecord{}
+	}
 	if data.AuditRecords == nil {
 		data.AuditRecords = map[string]AuditRecord{}
 	}

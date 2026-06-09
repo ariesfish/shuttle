@@ -107,6 +107,13 @@ func (c *ManagementCommands) CreateDiagnosticsTask(ctx context.Context, appID st
 	return c.requestServingApplicationAction(ctx, "create_diagnostics_task", appID, ServingApplicationActionDiagnostics)
 }
 
+func (c *ManagementCommands) CreateTuningRecord(ctx context.Context, req CreateTuningRecordRequest) (TuningRecord, error) {
+	if err := requireActorRole(ctx, "admin", "operator"); err != nil {
+		return TuningRecord{}, err
+	}
+	return c.store.CreateTuningRecord(ActorFromContext(ctx).Name, req)
+}
+
 func (c *ManagementCommands) CreateTask(ctx context.Context, req CreateTaskRequest) (Task, error) {
 	if err := requireActorRole(ctx, "admin", "operator"); err != nil {
 		return Task{}, err

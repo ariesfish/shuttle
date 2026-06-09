@@ -65,6 +65,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/apps/{appID}/observability", s.getObservabilityEntry)
 	mux.HandleFunc("GET /v1/apps/{appID}/observability/summary", s.getObservabilitySummary)
 	mux.HandleFunc("GET /v1/endpoints", s.listEndpoints)
+	mux.HandleFunc("POST /v1/tuning-records", s.createTuningRecord)
+	mux.HandleFunc("GET /v1/tuning-records", s.listTuningRecords)
+	mux.HandleFunc("GET /v1/tuning-records/{recordID}", s.getTuningRecord)
 	mux.HandleFunc("GET /v1/audit-records", s.listAuditRecords)
 	mux.HandleFunc("POST /v1/tasks", s.createTask)
 	mux.HandleFunc("GET /v1/tasks", s.listTasks)
@@ -251,6 +254,25 @@ func (s *Server) getObservabilitySummary(w http.ResponseWriter, r *http.Request)
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {
 	endpoints, err := s.store.ListEndpoints()
 	writeResult(w, endpoints, http.StatusOK, err)
+}
+
+func (s *Server) createTuningRecord(w http.ResponseWriter, r *http.Request) {
+	var req CreateTuningRecordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	record, err := s.commands.CreateTuningRecord(r.Context(), req)
+	writeResult(w, record, http.StatusCreated, err)
+}
+
+func (s *Server) listTuningRecords(w http.ResponseWriter, r *http.Request) {
+	records, err := s.store.ListTuningRecords(r.URL.Query().Get("servingApplicationId"))
+	writeResult(w, records, http.StatusOK, err)
+}
+
+func (s *Server) getTuningRecord(w http.ResponseWriter, r *http.Request) {
+	record, err := s.store.GetTuningRecord(r.PathValue("recordID"))
+	writeResult(w, record, http.StatusOK, err)
 }
 
 func (s *Server) listAuditRecords(w http.ResponseWriter, r *http.Request) {

@@ -259,6 +259,22 @@ type ObservabilitySummary struct {
 	Results              []PrometheusQueryResult `json:"results"`
 }
 
+type TuningRecord struct {
+	ID                           string         `json:"id"`
+	ServingApplicationID         string         `json:"servingApplicationId"`
+	ClusterID                    string         `json:"clusterId"`
+	AcceleratorPoolID            string         `json:"acceleratorPoolId,omitempty"`
+	ModelArtifactID              string         `json:"modelArtifactId"`
+	ServingRecipeID              string         `json:"servingRecipeId"`
+	AcceleratorInventoryRevision string         `json:"acceleratorInventoryRevision"`
+	BenchmarkSummary             map[string]any `json:"benchmarkSummary,omitempty"`
+	PlannerSettings              map[string]any `json:"plannerSettings,omitempty"`
+	Recommendations              []string       `json:"recommendations,omitempty"`
+	Reason                       string         `json:"reason,omitempty"`
+	Actor                        string         `json:"actor"`
+	CreatedAt                    time.Time      `json:"createdAt"`
+}
+
 type EndpointRegistryEntry struct {
 	ID                   string    `json:"id"`
 	ServingApplicationID string    `json:"servingApplicationId"`
@@ -345,6 +361,14 @@ type CreateServingApplicationRequest struct {
 	Runtime      RuntimeIntent      `json:"runtime"`
 	Service      ServiceIntent      `json:"service"`
 	Optimization OptimizationIntent `json:"optimization"`
+}
+
+type CreateTuningRecordRequest struct {
+	ServingApplicationID string         `json:"servingApplicationId"`
+	BenchmarkSummary     map[string]any `json:"benchmarkSummary,omitempty"`
+	PlannerSettings      map[string]any `json:"plannerSettings,omitempty"`
+	Recommendations      []string       `json:"recommendations,omitempty"`
+	Reason               string         `json:"reason,omitempty"`
 }
 
 type CreateTaskRequest struct {

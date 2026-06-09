@@ -259,6 +259,30 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface TuningRecord {
+  id: string;
+  servingApplicationId: string;
+  clusterId: string;
+  acceleratorPoolId?: string;
+  modelArtifactId: string;
+  servingRecipeId: string;
+  acceleratorInventoryRevision: string;
+  benchmarkSummary?: Record<string, unknown>;
+  plannerSettings?: Record<string, unknown>;
+  recommendations?: string[];
+  reason?: string;
+  actor: string;
+  createdAt: string;
+}
+
+export interface CreateTuningRecordInput {
+  servingApplicationId: string;
+  benchmarkSummary?: Record<string, unknown>;
+  plannerSettings?: Record<string, unknown>;
+  recommendations?: string[];
+  reason?: string;
+}
+
 export interface EndpointRegistryEntry {
   id: string;
   servingApplicationId: string;
@@ -369,6 +393,11 @@ export const api = {
   listServingApplicationTransitions: (appId: string) => request<ServingApplicationTransition[]>(`/v1/apps/${appId}/transitions`),
   listTasks: () => request<Task[]>('/v1/tasks'),
   listEndpoints: () => request<EndpointRegistryEntry[]>('/v1/endpoints'),
+  listTuningRecords: (servingApplicationId?: string) => request<TuningRecord[]>(`/v1/tuning-records${servingApplicationId ? `?servingApplicationId=${encodeURIComponent(servingApplicationId)}` : ''}`),
+  createTuningRecord: (input: CreateTuningRecordInput) => request<TuningRecord>('/v1/tuning-records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
   getObservabilityEntry: (appId: string) => request<ObservabilityEntry>(`/v1/apps/${appId}/observability`),
   getObservabilitySummary: (appId: string) => request<ObservabilitySummary>(`/v1/apps/${appId}/observability/summary`),
   listAuditRecords: () => request<AuditRecord[]>('/v1/audit-records'),
