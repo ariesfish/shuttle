@@ -88,7 +88,7 @@ func TestGetObservabilitySummaryQueriesPrometheus(t *testing.T) {
 	server := NewServer(store, slog.Default())
 	server.observability = NewServingApplicationObservability(store, fake)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/serving-applications/"+app.ID+"/observability/summary", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/apps/"+app.ID+"/observability/summary", nil)
 	server.Routes().ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("unexpected status %d: %s", recorder.Code, recorder.Body.String())
